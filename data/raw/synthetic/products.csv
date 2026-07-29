@@ -1,0 +1,6 @@
+product_id,product_name,category,unit_price,stock_quantity
+101,Mechanical Keyboard,Accessories,2500.50,25
+102,Wireless Mouse,Accessories,890.00,40
+103,USB-C Hub,Electronics,1290.00,30
+104,Laptop Stand,Accessories,1450.00,20
+105,Webcam HD,Electronics,1890.00,15

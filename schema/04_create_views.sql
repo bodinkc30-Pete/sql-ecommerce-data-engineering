@@ -1,0 +1,505 @@
+DROP VIEW IF EXISTS vw_order_details;
+DROP VIEW IF EXISTS vw_customer_order_summary;
+DROP VIEW IF EXISTS vw_product_sales_summary;
+DROP VIEW IF EXISTS vw_daily_sales_summary;
+DROP VIEW IF EXISTS vw_payment_summary;
+DROP VIEW IF EXISTS vw_payment_reconciliation;
+DROP VIEW IF EXISTS vw_data_quality_summary;
+DROP VIEW IF EXISTS vw_pipeline_run_summary;
+
+DROP VIEW IF EXISTS vw_influencer_payment_details;
+DROP VIEW IF EXISTS vw_campaign_payment_summary;
+DROP VIEW IF EXISTS vw_influencer_payment_summary;
+DROP VIEW IF EXISTS vw_payment_status_summary;
+DROP VIEW IF EXISTS vw_rejected_influencer_summary;
+
+
+CREATE VIEW vw_order_details AS
+SELECT
+    o.order_id,
+    o.order_date,
+    o.order_status,
+    o.order_total,
+    c.customer_id,
+    c.customer_name,
+    c.email,
+    c.city,
+    oi.order_item_id,
+    p.product_id,
+    p.product_name,
+    p.category,
+    oi.quantity,
+    oi.unit_price,
+    oi.line_total,
+    pay.payment_id,
+    pay.payment_date,
+    pay.payment_method,
+    pay.payment_amount,
+    pay.payment_status
+FROM orders AS o
+INNER JOIN customers AS c
+    ON o.customer_id = c.customer_id
+INNER JOIN order_items AS oi
+    ON o.order_id = oi.order_id
+INNER JOIN products AS p
+    ON oi.product_id = p.product_id
+LEFT JOIN payments AS pay
+    ON o.order_id = pay.order_id;
+
+
+CREATE VIEW vw_customer_order_summary AS
+SELECT
+    c.customer_id,
+    c.customer_name,
+    c.email,
+    c.city,
+    COUNT(DISTINCT o.order_id) AS total_orders,
+    COALESCE(
+        SUM(oi.line_total),
+        0
+    ) AS total_spent,
+    COALESCE(
+        AVG(o.order_total),
+        0
+    ) AS average_order_value,
+    MIN(o.order_date) AS first_order_date,
+    MAX(o.order_date) AS latest_order_date
+FROM customers AS c
+LEFT JOIN orders AS o
+    ON c.customer_id = o.customer_id
+LEFT JOIN order_items AS oi
+    ON o.order_id = oi.order_id
+GROUP BY
+    c.customer_id,
+    c.customer_name,
+    c.email,
+    c.city;
+
+
+CREATE VIEW vw_product_sales_summary AS
+SELECT
+    p.product_id,
+    p.product_name,
+    p.category,
+    p.unit_price,
+    p.stock_quantity,
+    COUNT(
+        DISTINCT oi.order_id
+    ) AS total_orders,
+    COALESCE(
+        SUM(oi.quantity),
+        0
+    ) AS units_sold,
+    COALESCE(
+        SUM(oi.line_total),
+        0
+    ) AS total_revenue
+FROM products AS p
+LEFT JOIN order_items AS oi
+    ON p.product_id = oi.product_id
+GROUP BY
+    p.product_id,
+    p.product_name,
+    p.category,
+    p.unit_price,
+    p.stock_quantity;
+
+
+CREATE VIEW vw_daily_sales_summary AS
+SELECT
+    o.order_date,
+    COUNT(
+        DISTINCT o.order_id
+    ) AS total_orders,
+    COUNT(
+        DISTINCT o.customer_id
+    ) AS unique_customers,
+    COALESCE(
+        SUM(oi.quantity),
+        0
+    ) AS units_sold,
+    COALESCE(
+        SUM(oi.line_total),
+        0
+    ) AS total_revenue,
+    COALESCE(
+        AVG(o.order_total),
+        0
+    ) AS average_order_value
+FROM orders AS o
+LEFT JOIN order_items AS oi
+    ON o.order_id = oi.order_id
+GROUP BY
+    o.order_date;
+
+
+CREATE VIEW vw_payment_summary AS
+SELECT
+    payment_method,
+    payment_status,
+    COUNT(
+        payment_id
+    ) AS total_payments,
+    COALESCE(
+        SUM(payment_amount),
+        0
+    ) AS total_payment_amount,
+    COALESCE(
+        AVG(payment_amount),
+        0
+    ) AS average_payment_amount,
+    MIN(payment_date) AS first_payment_date,
+    MAX(payment_date) AS latest_payment_date
+FROM payments
+GROUP BY
+    payment_method,
+    payment_status;
+
+
+CREATE VIEW vw_payment_reconciliation AS
+WITH order_item_totals AS (
+    SELECT
+        order_id,
+        COALESCE(
+            SUM(line_total),
+            0
+        ) AS calculated_order_total
+    FROM order_items
+    GROUP BY
+        order_id
+),
+payment_totals AS (
+    SELECT
+        order_id,
+        COALESCE(
+            SUM(
+                CASE
+                    WHEN payment_status = 'PAID'
+                        THEN payment_amount
+                    ELSE 0
+                END
+            ),
+            0
+        ) AS paid_amount,
+        COUNT(payment_id) AS payment_record_count
+    FROM payments
+    GROUP BY
+        order_id
+)
+SELECT
+    o.order_id,
+    o.customer_id,
+    o.order_date,
+    o.order_status,
+    o.order_total AS stored_order_total,
+    COALESCE(
+        oit.calculated_order_total,
+        0
+    ) AS calculated_order_total,
+    COALESCE(
+        pt.paid_amount,
+        0
+    ) AS paid_amount,
+    COALESCE(
+        pt.payment_record_count,
+        0
+    ) AS payment_record_count,
+    ROUND(
+        o.order_total
+        - COALESCE(
+            oit.calculated_order_total,
+            0
+        ),
+        2
+    ) AS order_total_difference,
+    ROUND(
+        o.order_total
+        - COALESCE(
+            pt.paid_amount,
+            0
+        ),
+        2
+    ) AS payment_difference,
+    CASE
+        WHEN ABS(
+            o.order_total
+            - COALESCE(
+                oit.calculated_order_total,
+                0
+            )
+        ) > 0.01
+            THEN 'ORDER_TOTAL_MISMATCH'
+
+        WHEN o.order_status = 'COMPLETED'
+             AND ABS(
+                 o.order_total
+                 - COALESCE(
+                     pt.paid_amount,
+                     0
+                 )
+             ) > 0.01
+            THEN 'PAYMENT_MISMATCH'
+
+        ELSE 'MATCHED'
+    END AS reconciliation_status
+FROM orders AS o
+LEFT JOIN order_item_totals AS oit
+    ON o.order_id = oit.order_id
+LEFT JOIN payment_totals AS pt
+    ON o.order_id = pt.order_id;
+
+
+CREATE VIEW vw_data_quality_summary AS
+SELECT
+    'rejected_influencer_records'
+        AS quality_source,
+    rejection_reason AS issue_type,
+    COUNT(*) AS issue_count,
+    COUNT(
+        DISTINCT source_file
+    ) AS affected_source_count,
+    MIN(rejected_at) AS first_detected_at,
+    MAX(rejected_at) AS latest_detected_at
+FROM rejected_influencer_records
+GROUP BY
+    rejection_reason
+
+UNION ALL
+
+SELECT
+    'pipeline_audit'
+        AS quality_source,
+    step_name AS issue_type,
+    COUNT(*) AS issue_count,
+    COUNT(
+        DISTINCT run_id
+    ) AS affected_source_count,
+    MIN(started_at) AS first_detected_at,
+    MAX(completed_at) AS latest_detected_at
+FROM pipeline_audit
+WHERE run_status = 'FAILED'
+GROUP BY
+    step_name;
+
+
+CREATE VIEW vw_pipeline_run_summary AS
+SELECT
+    run_id,
+    pipeline_name,
+    MIN(started_at) AS pipeline_started_at,
+    MAX(completed_at) AS pipeline_completed_at,
+    COUNT(audit_id) AS total_steps,
+    COALESCE(
+        SUM(rows_processed),
+        0
+    ) AS total_rows_processed,
+    COALESCE(
+        SUM(rows_inserted),
+        0
+    ) AS total_rows_inserted,
+    COALESCE(
+        SUM(rows_updated),
+        0
+    ) AS total_rows_updated,
+    COALESCE(
+        SUM(rows_rejected),
+        0
+    ) AS total_rows_rejected,
+    CASE
+        WHEN SUM(
+            CASE
+                WHEN run_status = 'FAILED'
+                    THEN 1
+                ELSE 0
+            END
+        ) > 0
+            THEN 'FAILED'
+
+        WHEN SUM(
+            CASE
+                WHEN run_status = 'RUNNING'
+                    THEN 1
+                ELSE 0
+            END
+        ) > 0
+            THEN 'RUNNING'
+
+        ELSE 'SUCCESS'
+    END AS pipeline_status
+FROM pipeline_audit
+GROUP BY
+    run_id,
+    pipeline_name;
+
+
+CREATE VIEW vw_influencer_payment_details AS
+SELECT
+    ip.influencer_payment_id,
+    c.campaign_id,
+    c.campaign_name,
+    c.source_section,
+    i.influencer_id,
+    i.influencer_handle,
+    ip.source_sequence,
+    ip.fee_amount,
+    ip.post_date,
+    ip.payment_round_date,
+    ip.payment_status,
+    ip.notes_sanitized,
+    ip.source_file,
+    ip.source_sheet,
+    ip.source_row_number,
+    ip.created_at,
+    ip.updated_at
+FROM influencer_payments AS ip
+INNER JOIN campaigns AS c
+    ON ip.campaign_id = c.campaign_id
+INNER JOIN influencers AS i
+    ON ip.influencer_id = i.influencer_id;
+
+
+CREATE VIEW vw_campaign_payment_summary AS
+SELECT
+    c.campaign_id,
+    c.campaign_name,
+    c.source_section,
+    COUNT(
+        ip.influencer_payment_id
+    ) AS total_payment_records,
+    COUNT(
+        DISTINCT ip.influencer_id
+    ) AS total_influencers,
+    COALESCE(
+        SUM(ip.fee_amount),
+        0
+    ) AS total_fee_amount,
+    COALESCE(
+        SUM(
+            CASE
+                WHEN ip.payment_status = 'PAID'
+                    THEN ip.fee_amount
+                ELSE 0
+            END
+        ),
+        0
+    ) AS paid_amount,
+    COALESCE(
+        SUM(
+            CASE
+                WHEN ip.payment_status = 'UNPAID'
+                    THEN ip.fee_amount
+                ELSE 0
+            END
+        ),
+        0
+    ) AS unpaid_amount,
+    COALESCE(
+        SUM(
+            CASE
+                WHEN ip.payment_status = 'CANCELLED'
+                    THEN ip.fee_amount
+                ELSE 0
+            END
+        ),
+        0
+    ) AS cancelled_amount,
+    MIN(ip.post_date) AS first_post_date,
+    MAX(ip.post_date) AS latest_post_date
+FROM campaigns AS c
+LEFT JOIN influencer_payments AS ip
+    ON c.campaign_id = ip.campaign_id
+GROUP BY
+    c.campaign_id,
+    c.campaign_name,
+    c.source_section;
+
+
+CREATE VIEW vw_influencer_payment_summary AS
+SELECT
+    i.influencer_id,
+    i.influencer_handle,
+    COUNT(
+        ip.influencer_payment_id
+    ) AS total_payment_records,
+    COUNT(
+        DISTINCT ip.campaign_id
+    ) AS total_campaigns,
+    COALESCE(
+        SUM(ip.fee_amount),
+        0
+    ) AS total_fee_amount,
+    COALESCE(
+        SUM(
+            CASE
+                WHEN ip.payment_status = 'PAID'
+                    THEN ip.fee_amount
+                ELSE 0
+            END
+        ),
+        0
+    ) AS total_paid_amount,
+    COALESCE(
+        SUM(
+            CASE
+                WHEN ip.payment_status = 'UNPAID'
+                    THEN ip.fee_amount
+                ELSE 0
+            END
+        ),
+        0
+    ) AS total_unpaid_amount,
+    MIN(ip.post_date) AS first_post_date,
+    MAX(ip.post_date) AS latest_post_date
+FROM influencers AS i
+LEFT JOIN influencer_payments AS ip
+    ON i.influencer_id = ip.influencer_id
+GROUP BY
+    i.influencer_id,
+    i.influencer_handle;
+
+
+CREATE VIEW vw_payment_status_summary AS
+SELECT
+    payment_status,
+    COUNT(
+        influencer_payment_id
+    ) AS total_records,
+    COUNT(
+        DISTINCT influencer_id
+    ) AS total_influencers,
+    COUNT(
+        DISTINCT campaign_id
+    ) AS total_campaigns,
+    COALESCE(
+        SUM(fee_amount),
+        0
+    ) AS total_fee_amount,
+    COALESCE(
+        AVG(fee_amount),
+        0
+    ) AS average_fee_amount,
+    MIN(
+        payment_round_date
+    ) AS first_payment_round,
+    MAX(
+        payment_round_date
+    ) AS latest_payment_round
+FROM influencer_payments
+GROUP BY
+    payment_status;
+
+
+CREATE VIEW vw_rejected_influencer_summary AS
+SELECT
+    rejection_reason,
+    COUNT(
+        rejection_id
+    ) AS rejected_record_count,
+    COUNT(
+        DISTINCT source_file
+    ) AS affected_source_files,
+    MIN(rejected_at) AS first_rejected_at,
+    MAX(rejected_at) AS latest_rejected_at
+FROM rejected_influencer_records
+GROUP BY
+    rejection_reason;

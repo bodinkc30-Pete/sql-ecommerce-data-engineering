@@ -1,0 +1,3 @@
+﻿run_id,pipeline_name,pipeline_started_at,pipeline_completed_at,total_steps,total_rows_processed,total_rows_inserted,total_rows_updated,total_rows_rejected,pipeline_status
+326d8607-9d6f-4250-a8f4-d64242502ea3,ecommerce_transformation_pipeline,2026-07-29 19:02:43,2026-07-29 19:02:43,7,549,308,0,241,SUCCESS
+b46ab547-f439-418b-a8e8-aa780b262cbc,ecommerce_quality_check_pipeline,2026-07-29 19:02:43,2026-07-29 19:02:43,6,0,0,0,0,SUCCESS

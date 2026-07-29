@@ -1,0 +1,127 @@
+# ============================================================
+# Python
+# ============================================================
+
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+
+# ============================================================
+# Virtual environments
+# ============================================================
+
+.venv/
+venv/
+env/
+ENV/
+
+
+# ============================================================
+# Environment variables and secrets
+# ============================================================
+
+.env
+.env.*
+!.env.example
+
+*.key
+*.pem
+*.secret
+
+
+# ============================================================
+# IDE and operating-system files
+# ============================================================
+
+.vscode/
+.idea/
+
+.DS_Store
+Thumbs.db
+desktop.ini
+
+
+# ============================================================
+# SQLite databases
+# ============================================================
+
+database/*.db
+database/*.db-shm
+database/*.db-wal
+database/*.sqlite
+database/*.sqlite3
+
+!database/.gitkeep
+
+
+# ============================================================
+# Pipeline logs
+# ============================================================
+
+logs/*.log
+logs/*.txt
+
+!logs/.gitkeep
+
+
+# ============================================================
+# Pawchoice private source data
+# Do not upload real Excel, PDF, names, phone numbers,
+# bank accounts, or other personal information to GitHub.
+# ============================================================
+
+data/raw/pawchoice/*
+
+!data/raw/pawchoice/.gitkeep
+!data/raw/pawchoice/README.md
+
+
+# ============================================================
+# Synthetic source data
+# Safe sample CSV files may be committed for reproducibility.
+# ============================================================
+
+!data/raw/synthetic/
+!data/raw/synthetic/*.csv
+!data/raw/synthetic/.gitkeep
+
+
+# ============================================================
+# Generated staging data
+# ============================================================
+
+data/staging/*
+!data/staging/.gitkeep
+
+
+# ============================================================
+# Generated processed data
+# ============================================================
+
+data/processed/*
+!data/processed/.gitkeep
+!data/processed/sample_*.csv
+
+
+# ============================================================
+# Temporary files
+# ============================================================
+
+*.tmp
+*.temp
+*.bak
+*.swp
+*.swo
+~$*
+
+
+# ============================================================
+# Excel temporary lock files
+# ============================================================
+
+~$*.xlsx
+~$*.xls

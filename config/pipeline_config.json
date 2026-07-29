@@ -1,0 +1,77 @@
+{
+    "project_name": "sql-ecommerce-data-engineering",
+    "pipeline_name": "hybrid_ecommerce_data_pipeline",
+    "database": {
+        "type": "sqlite",
+        "file_name": "ecommerce_data_engineering.db",
+        "foreign_keys_enabled": true
+    },
+    "directories": {
+        "synthetic_raw_data": "data/raw/synthetic",
+        "pawchoice_raw_data": "data/raw/pawchoice",
+        "staging_data": "data/staging",
+        "processed_data": "data/processed",
+        "database": "database",
+        "logs": "logs"
+    },
+    "synthetic_files": {
+        "customers": "customers.csv",
+        "products": "products.csv",
+        "orders": "orders.csv",
+        "order_items": "order_items.csv",
+        "payments": "payments.csv"
+    },
+    "pawchoice_files": {
+        "influencer_payments": "pawchoice_payments.xlsx",
+        "payment_sheet": "สรุปรอบจ่าย"
+    },
+    "pipeline": {
+        "load_type": "incremental",
+        "watermark_column": "loaded_at",
+        "default_watermark": "1900-01-01 00:00:00",
+        "stop_on_quality_failure": true,
+        "timezone": "UTC"
+    },
+    "privacy": {
+        "hash_bank_accounts": true,
+        "hash_phone_numbers": true,
+        "mask_account_names": true,
+        "sanitize_notes": true,
+        "store_raw_pii": false
+    },
+    "quality": {
+        "freshness_threshold_hours": 24,
+        "amount_tolerance": 0.01,
+        "allowed_order_statuses": [
+            "PENDING",
+            "PROCESSING",
+            "COMPLETED",
+            "CANCELLED",
+            "REFUNDED"
+        ],
+        "allowed_payment_methods": [
+            "CREDIT_CARD",
+            "DEBIT_CARD",
+            "BANK_TRANSFER",
+            "E_WALLET",
+            "CASH"
+        ],
+        "allowed_payment_statuses": [
+            "PENDING",
+            "PAID",
+            "FAILED",
+            "REFUNDED",
+            "CANCELLED"
+        ],
+        "allowed_influencer_payment_statuses": [
+            "PAID",
+            "UNPAID",
+            "CANCELLED"
+        ]
+    },
+    "logging": {
+        "enabled": true,
+        "level": "INFO",
+        "file_name": "pipeline.log"
+    }
+}

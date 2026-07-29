@@ -1,0 +1,4 @@
+﻿payment_status,total_records,total_influencers,total_campaigns,total_fee_amount,average_fee_amount
+CANCELLED,4,4,2,0.0,0.0
+PAID,209,197,12,381500.0,1825.36
+UNPAID,68,65,9,119930.0,1763.68
