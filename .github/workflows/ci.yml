@@ -41,8 +41,26 @@ jobs:
           PYTHONUTF8: "1"
         run: python scripts/05_run_pipeline.py
 
+      - name: Export portfolio outputs
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: python scripts/06_export_portfolio_outputs.py
+
       - name: Run automated tests
         env:
           PYTHONIOENCODING: utf-8
           PYTHONUTF8: "1"
         run: python -m unittest discover -s tests -p "test_*.py" -v
+
+      - name: Upload pipeline artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-pipeline-artifacts-${{ github.run_number }}
+          path: |
+            logs/pipeline.log
+            data/processed/
+            database/ecommerce_data_engineering.db
+          if-no-files-found: warn
+          retention-days: 14
