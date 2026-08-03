@@ -5,6 +5,7 @@ DROP TABLE IF EXISTS order_items;
 DROP TABLE IF EXISTS orders;
 DROP TABLE IF EXISTS products;
 DROP TABLE IF EXISTS customers;
+DROP TABLE IF EXISTS pipeline_watermark;
 DROP TABLE IF EXISTS pipeline_audit;
 
 CREATE TABLE customers (
@@ -67,6 +68,12 @@ CREATE TABLE payments (
         REFERENCES orders(order_id)
 );
 
+CREATE TABLE pipeline_watermark (
+    table_name TEXT PRIMARY KEY,
+    last_loaded_at TEXT NOT NULL,
+    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE pipeline_audit (
     audit_id INTEGER PRIMARY KEY AUTOINCREMENT,
     pipeline_name TEXT NOT NULL,
@@ -82,6 +89,7 @@ CREATE TABLE pipeline_audit (
     completed_at TEXT,
     created_at TEXT DEFAULT CURRENT_TIMESTAMP
 );
+
 DROP TABLE IF EXISTS rejected_influencer_records;
 DROP TABLE IF EXISTS influencer_payments;
 DROP TABLE IF EXISTS influencers;

@@ -2,12 +2,6 @@ PRAGMA foreign_keys = ON;
 
 BEGIN TRANSACTION;
 
-CREATE TABLE IF NOT EXISTS pipeline_watermark (
-    table_name TEXT PRIMARY KEY,
-    last_loaded_at TEXT NOT NULL,
-    updated_at TEXT DEFAULT CURRENT_TIMESTAMP
-);
-
 INSERT OR IGNORE INTO pipeline_watermark (
     table_name,
     last_loaded_at
