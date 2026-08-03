@@ -1,6 +1,8 @@
 
 # SQL E-commerce Data Engineering
 
+[![Data Pipeline CI](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml/badge.svg)](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml)
+
 A production-style data engineering project with two execution modes: a reproducible Demo Mode using synthetic e-commerce data, and a Hybrid Mode that combines synthetic transactions with a private Pawchoice influencer payment workbook.
 
 The pipeline ingests CSV and Excel sources, loads raw records into staging tables, applies SQL transformations, protects personally identifiable information, routes invalid records to rejected tables, validates data quality, and exports portfolio-safe analytical outputs.
