@@ -222,12 +222,12 @@ scripts/01_setup_database.py
 
 Creates:
 
-- Staging tables
-- Core tables
+- 17 staging, core, audit, rejected-record, and watermark tables
 - Foreign keys
-- Indexes
-- Analytical views
+- 28 indexes
+- 13 analytical views
 - Pipeline audit structures
+- `pipeline_watermark` for incremental-load state
 
 ### 2. Raw data ingestion
 
@@ -413,12 +413,16 @@ Run all tests:
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-Current result:
+Current Demo Mode result:
 
 ```text
 Ran 59 tests
-OK
+OK (skipped=4)
 ```
+
+In Demo Mode, 55 tests pass and 4 Pawchoice-specific transformation tests are skipped because the private workbook is intentionally unavailable.
+
+In Hybrid Mode, those four tests run normally and verify that Pawchoice staging, campaign, influencer, and influencer-payment records were created.
 
 ### Test Evidence
 
@@ -432,6 +436,7 @@ The tests cover:
 - Indexes
 - Foreign keys
 - Transformations
+- Demo/Hybrid mode-aware behavior
 - Data privacy
 - Data quality
 - Rejected records
@@ -445,7 +450,15 @@ The tests cover:
 
 ### Demo Mode result
 
-A successful Demo Mode run processes only the version-controlled synthetic files:
+A successful fresh-clone Demo Mode run creates:
+
+```text
+Tables: 17
+Views: 13
+Indexes: 28
+```
+
+It then processes only the version-controlled synthetic files:
 
 ```text
 Synthetic staging records: 27
@@ -628,6 +641,15 @@ python scripts/06_export_portfolio_outputs.py
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
+Expected Demo Mode result:
+
+```text
+Ran 59 tests
+OK (skipped=4)
+```
+
+The four skipped tests require the private Pawchoice workbook and run normally when `pipeline.mode` is set to `hybrid`.
+
 ---
 
 ## Example Successful Run
@@ -672,7 +694,7 @@ The log file is excluded from GitHub. Pipeline logs include the selected mode an
 - Data lineage
 - Data privacy and governance
 - Pipeline auditing
-- Automated testing
+- Mode-aware automated testing
 - Analytical views
 - Portfolio-safe output generation
 
