@@ -26,6 +26,7 @@
         "payment_sheet": "สรุปรอบจ่าย"
     },
     "pipeline": {
+        "mode": "demo",
         "load_type": "incremental",
         "watermark_column": "loaded_at",
         "default_watermark": "1900-01-01 00:00:00",

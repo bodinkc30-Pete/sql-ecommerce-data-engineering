@@ -1,12 +1,20 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import json
 import os
 import subprocess
 import sys
 import time
+from typing import Any
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+CONFIG_PATH = (
+    PROJECT_ROOT
+    / "config"
+    / "pipeline_config.json"
+)
 
 SCRIPTS_DIRECTORY = (
     PROJECT_ROOT
@@ -45,8 +53,8 @@ PIPELINE_STEPS = [
         "step_name": "LOAD_RAW_DATA",
         "script_name": "02_load_raw_data.py",
         "description": (
-            "โหลด Synthetic CSV และ "
-            "Pawchoice Excel เข้าสู่ Staging"
+            "โหลดข้อมูลต้นทางเข้าสู่ Staging "
+            "ตาม Pipeline Mode"
         ),
     },
     {
@@ -74,6 +82,54 @@ def current_utc_time() -> str:
     return datetime.now(
         timezone.utc
     ).strftime("%Y-%m-%d %H:%M:%S")
+
+
+def read_pipeline_config() -> dict[str, Any]:
+    if not CONFIG_PATH.exists():
+        raise FileNotFoundError(
+            f"ไม่พบไฟล์ Config: {CONFIG_PATH}"
+        )
+
+    with CONFIG_PATH.open(
+        mode="r",
+        encoding="utf-8",
+    ) as config_file:
+        return json.load(config_file)
+
+
+def get_pipeline_mode(
+    config: dict[str, Any],
+) -> str:
+    pipeline_config = config.get(
+        "pipeline",
+        {},
+    )
+
+    pipeline_mode = str(
+        pipeline_config.get(
+            "mode",
+            "hybrid",
+        )
+    ).strip().lower()
+
+    allowed_modes = {
+        "demo",
+        "hybrid",
+    }
+
+    if pipeline_mode not in allowed_modes:
+        allowed_mode_text = ", ".join(
+            sorted(allowed_modes)
+        )
+
+        raise ValueError(
+            "ค่า pipeline.mode ไม่ถูกต้อง: "
+            f"{pipeline_mode}. "
+            "ค่าที่รองรับคือ: "
+            f"{allowed_mode_text}"
+        )
+
+    return pipeline_mode
 
 
 def ensure_required_directories() -> None:
@@ -258,48 +314,45 @@ def run_script(
     return elapsed_seconds
 
 
-def validate_pipeline_inputs() -> None:
+def validate_pipeline_inputs(
+    config: dict[str, Any],
+    pipeline_mode: str,
+) -> None:
+    directories = config["directories"]
+    synthetic_files = config["synthetic_files"]
+    pawchoice_files = config["pawchoice_files"]
+
+    synthetic_directory = (
+        PROJECT_ROOT
+        / directories["synthetic_raw_data"]
+    )
+
+    pawchoice_directory = (
+        PROJECT_ROOT
+        / directories["pawchoice_raw_data"]
+    )
+
     required_paths = [
-        PROJECT_ROOT
-        / "config"
-        / "pipeline_config.json",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "synthetic"
-        / "customers.csv",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "synthetic"
-        / "products.csv",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "synthetic"
-        / "orders.csv",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "synthetic"
-        / "order_items.csv",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "synthetic"
-        / "payments.csv",
-
-        PROJECT_ROOT
-        / "data"
-        / "raw"
-        / "pawchoice"
-        / "pawchoice_payments.xlsx",
+        CONFIG_PATH,
+        synthetic_directory
+        / synthetic_files["customers"],
+        synthetic_directory
+        / synthetic_files["products"],
+        synthetic_directory
+        / synthetic_files["orders"],
+        synthetic_directory
+        / synthetic_files["order_items"],
+        synthetic_directory
+        / synthetic_files["payments"],
     ]
+
+    if pipeline_mode == "hybrid":
+        required_paths.append(
+            pawchoice_directory
+            / pawchoice_files[
+                "influencer_payments"
+            ]
+        )
 
     missing_paths = [
         path
@@ -319,10 +372,46 @@ def validate_pipeline_inputs() -> None:
         )
 
 
+def print_pipeline_sources(
+    pipeline_mode: str,
+) -> None:
+    print(
+        f"[INFO] Pipeline mode: "
+        f"{pipeline_mode.upper()}"
+    )
+
+    print(
+        "[INFO] แหล่งข้อมูล:"
+    )
+
+    print(
+        "  1. Synthetic CSV"
+    )
+
+    if pipeline_mode == "hybrid":
+        print(
+            "  2. Pawchoice Excel"
+        )
+    else:
+        print(
+            "  2. Pawchoice Excel "
+            "(ข้ามใน Demo Mode)"
+        )
+
+
 def run_pipeline() -> None:
     ensure_required_directories()
 
-    validate_pipeline_inputs()
+    config = read_pipeline_config()
+
+    pipeline_mode = get_pipeline_mode(
+        config
+    )
+
+    validate_pipeline_inputs(
+        config=config,
+        pipeline_mode=pipeline_mode,
+    )
 
     pipeline_started_at = (
         time.perf_counter()
@@ -335,20 +424,12 @@ def run_pipeline() -> None:
     print_separator()
 
     print(
-        "[START] HYBRID E-COMMERCE "
+        "[START] E-COMMERCE "
         "DATA PIPELINE"
     )
 
-    print(
-        "[INFO] แหล่งข้อมูล:"
-    )
-
-    print(
-        "  1. Synthetic CSV"
-    )
-
-    print(
-        "  2. Pawchoice Excel"
+    print_pipeline_sources(
+        pipeline_mode
     )
 
     print(
@@ -358,7 +439,8 @@ def run_pipeline() -> None:
 
     write_log(
         "PIPELINE START | "
-        "hybrid_ecommerce_data_pipeline"
+        f"mode={pipeline_mode} | "
+        "ecommerce_data_pipeline"
     )
 
     step_durations: dict[str, float] = {}
@@ -396,6 +478,11 @@ def run_pipeline() -> None:
     )
 
     print(
+        f"[INFO] Pipeline mode: "
+        f"{pipeline_mode.upper()}"
+    )
+
+    print(
         f"[INFO] ฐานข้อมูล: "
         f"{DATABASE_PATH}"
     )
@@ -426,6 +513,7 @@ def run_pipeline() -> None:
 
     write_log(
         "PIPELINE SUCCESS | "
+        f"mode={pipeline_mode} | "
         f"duration={total_elapsed_seconds:.2f} seconds"
     )
 
@@ -444,6 +532,34 @@ def main() -> None:
         write_log(
             f"PIPELINE FAILED | "
             f"FILE ERROR | {error}"
+        )
+
+        sys.exit(1)
+
+    except json.JSONDecodeError as error:
+        print_separator()
+
+        print(
+            f"[CONFIG JSON ERROR] {error}"
+        )
+
+        write_log(
+            f"PIPELINE FAILED | "
+            f"CONFIG JSON ERROR | {error}"
+        )
+
+        sys.exit(1)
+
+    except ValueError as error:
+        print_separator()
+
+        print(
+            f"[CONFIG ERROR] {error}"
+        )
+
+        write_log(
+            f"PIPELINE FAILED | "
+            f"CONFIG ERROR | {error}"
         )
 
         sys.exit(1)

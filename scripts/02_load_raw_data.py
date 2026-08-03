@@ -1,3 +1,4 @@
+
 from csv import DictReader
 from datetime import datetime, timezone
 from hashlib import sha256
@@ -152,6 +153,41 @@ def read_pipeline_config() -> dict[str, Any]:
         encoding="utf-8",
     ) as config_file:
         return json.load(config_file)
+
+
+def get_pipeline_mode(
+    config: dict[str, Any],
+) -> str:
+    pipeline_config = config.get(
+        "pipeline",
+        {},
+    )
+
+    pipeline_mode = str(
+        pipeline_config.get(
+            "mode",
+            "hybrid",
+        )
+    ).strip().lower()
+
+    allowed_modes = {
+        "demo",
+        "hybrid",
+    }
+
+    if pipeline_mode not in allowed_modes:
+        allowed_mode_text = ", ".join(
+            sorted(allowed_modes)
+        )
+
+        raise ValueError(
+            "ค่า pipeline.mode ไม่ถูกต้อง: "
+            f"{pipeline_mode}. "
+            "ค่าที่รองรับคือ: "
+            f"{allowed_mode_text}"
+        )
+
+    return pipeline_mode
 
 
 def normalize_value(value: Any) -> str | None:
@@ -834,6 +870,10 @@ def load_all_raw_data() -> None:
 
     config = read_pipeline_config()
 
+    pipeline_mode = get_pipeline_mode(
+        config
+    )
+
     directories = config["directories"]
 
     synthetic_directory = (
@@ -869,12 +909,18 @@ def load_all_raw_data() -> None:
         ]
     )
 
-    required_file_paths.append(
-        pawchoice_excel_path
-    )
+    if pipeline_mode == "hybrid":
+        required_file_paths.append(
+            pawchoice_excel_path
+        )
 
     validate_required_files(
         required_file_paths
+    )
+
+    print(
+        f"[INFO] Pipeline mode: "
+        f"{pipeline_mode.upper()}"
     )
 
     total_loaded_rows = 0
@@ -912,19 +958,33 @@ def load_all_raw_data() -> None:
 
                 total_loaded_rows += loaded_rows
 
-            pawchoice_loaded_rows = (
-                load_pawchoice_excel(
-                    connection=connection,
-                    excel_path=pawchoice_excel_path,
-                    sheet_name=pawchoice_files[
-                        "payment_sheet"
-                    ],
+            if pipeline_mode == "hybrid":
+                pawchoice_loaded_rows = (
+                    load_pawchoice_excel(
+                        connection=connection,
+                        excel_path=pawchoice_excel_path,
+                        sheet_name=pawchoice_files[
+                            "payment_sheet"
+                        ],
+                    )
                 )
-            )
 
-            total_loaded_rows += (
-                pawchoice_loaded_rows
-            )
+                total_loaded_rows += (
+                    pawchoice_loaded_rows
+                )
+
+            else:
+                connection.execute(
+                    """
+                    DELETE FROM
+                        stg_influencer_payments;
+                    """
+                )
+
+                print(
+                    "[INFO] Demo Mode: "
+                    "ข้ามการโหลด Pawchoice Excel"
+                )
 
             connection.commit()
 
@@ -932,8 +992,17 @@ def load_all_raw_data() -> None:
             connection.rollback()
             raise
 
+    if pipeline_mode == "hybrid":
+        success_message = (
+            "โหลดข้อมูลแบบผสมสำเร็จ"
+        )
+    else:
+        success_message = (
+            "โหลดข้อมูล Demo สำเร็จ"
+        )
+
     print(
-        "[SUCCESS] โหลดข้อมูลแบบผสมสำเร็จ: "
+        f"[SUCCESS] {success_message}: "
         f"{total_loaded_rows} แถว"
     )
 

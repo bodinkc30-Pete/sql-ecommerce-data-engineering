@@ -1,6 +1,7 @@
+
 # SQL E-commerce Data Engineering
 
-A production-style hybrid data engineering project that combines synthetic e-commerce transaction data with a real-world Pawchoice influencer payment workbook.
+A production-style data engineering project with two execution modes: a reproducible Demo Mode using synthetic e-commerce data, and a Hybrid Mode that combines synthetic transactions with a private Pawchoice influencer payment workbook.
 
 The pipeline ingests CSV and Excel sources, loads raw records into staging tables, applies SQL transformations, protects personally identifiable information, routes invalid records to rejected tables, validates data quality, and exports portfolio-safe analytical outputs.
 
@@ -30,6 +31,8 @@ The project contains two data domains:
 1. Synthetic e-commerce transactions
 2. Pawchoice influencer payment records
 
+The repository uses **Demo Mode by default** so anyone can clone and run the pipeline without private source files.
+
 ---
 
 ## Architecture
@@ -38,7 +41,7 @@ The project contains two data domains:
 flowchart LR
 
     A1[Synthetic CSV Files] --> B[Raw Data Loader]
-    A2[Pawchoice Excel] --> B
+    A2[Pawchoice Excel<br/>Hybrid Mode only] --> B
 
     B --> C1[Staging Tables]
     C1 --> D[SQL Transformations]
@@ -83,7 +86,7 @@ data/raw/synthetic/
 
 These files demonstrate relational e-commerce entities and transactional relationships.
 
-### Pawchoice private source data
+### Pawchoice private source data (Hybrid Mode only)
 
 The real-world source is:
 
@@ -100,6 +103,8 @@ Expected worksheet:
 The workbook contains multiple payment sections and repeated table headers within the same worksheet.
 
 The actual workbook is excluded from GitHub because it may contain personal and financial information.
+
+Demo Mode does not require this file. Hybrid Mode requires the workbook to be placed at the exact path shown above.
 
 See:
 
@@ -230,11 +235,11 @@ Creates:
 scripts/02_load_raw_data.py
 ```
 
-Loads:
+Loads according to the configured pipeline mode:
 
-- Five synthetic CSV files
-- Pawchoice Excel workbook
-- Multiple table sections from one worksheet
+- **Demo Mode:** five synthetic CSV files
+- **Hybrid Mode:** five synthetic CSV files plus the Pawchoice Excel workbook
+- Multiple table sections from one worksheet in Hybrid Mode
 - Source-file and source-row lineage
 
 ### 3. SQL transformations
@@ -274,7 +279,7 @@ Runs:
 scripts/05_run_pipeline.py
 ```
 
-Runs all pipeline stages in order and stops when a stage fails.
+Runs all pipeline stages in order, reads the selected mode from `config/pipeline_config.json`, validates only the files required by that mode, and stops when a stage fails.
 
 ### 6. Portfolio output export
 
@@ -438,7 +443,21 @@ The tests cover:
 
 ## Pipeline Results
 
-The successful end-to-end run processed:
+### Demo Mode result
+
+A successful Demo Mode run processes only the version-controlled synthetic files:
+
+```text
+Synthetic staging records: 27
+Pawchoice staging records: 0
+Total raw records loaded: 27
+```
+
+The e-commerce transformations and all quality checks complete successfully without the private workbook.
+
+### Hybrid Mode result
+
+A successful Hybrid Mode run processes:
 
 ```text
 Synthetic staging records: 27
@@ -502,6 +521,13 @@ The exports intentionally exclude:
 
 ## Installation
 
+Clone the repository:
+
+```bash
+git clone https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering.git
+cd sql-ecommerce-data-engineering
+```
+
 Create or activate a Python environment, then install dependencies:
 
 ```bash
@@ -516,6 +542,70 @@ openpyxl==3.1.5
 
 ---
 
+## Pipeline Modes
+
+The selected mode is stored in:
+
+```text
+config/pipeline_config.json
+```
+
+### Demo Mode — default and reproducible
+
+Use:
+
+```json
+"mode": "demo"
+```
+
+Demo Mode:
+
+- Uses only the five synthetic CSV files included in GitHub
+- Does not require `pawchoice_payments.xlsx`
+- Skips Pawchoice ingestion
+- Clears influencer staging data to prevent stale private-source records
+- Runs transformations, quality checks, auditing, and logging normally
+- Is the recommended mode for reviewers and first-time users
+
+### Hybrid Mode — private source enabled
+
+Use:
+
+```json
+"mode": "hybrid"
+```
+
+Before running Hybrid Mode, place the private workbook at:
+
+```text
+data/raw/pawchoice/pawchoice_payments.xlsx
+```
+
+The required worksheet is:
+
+```text
+สรุปรอบจ่าย
+```
+
+Hybrid Mode:
+
+- Loads the five synthetic CSV files
+- Loads the private Pawchoice Excel workbook
+- Processes influencer payments
+- Applies PII hashing, masking, and note sanitization
+- Routes invalid records to the rejected-record table
+
+Supported values are only:
+
+```text
+demo
+hybrid
+```
+
+Any other value causes a clear configuration error.
+
+---
+
 ## How to Run
 
 ### Run the complete pipeline
@@ -523,6 +613,8 @@ openpyxl==3.1.5
 ```bash
 python scripts/05_run_pipeline.py
 ```
+
+The pipeline reads the selected mode automatically from `config/pipeline_config.json`.
 
 ### Export portfolio outputs
 
@@ -541,6 +633,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ## Example Successful Run
 
 ```text
+Pipeline mode: DEMO or HYBRID
 SETUP_DATABASE        SUCCESS
 LOAD_RAW_DATA         SUCCESS
 RUN_TRANSFORMATIONS   SUCCESS
@@ -555,12 +648,14 @@ The pipeline also writes execution logs to:
 logs/pipeline.log
 ```
 
-The log file is excluded from GitHub.
+The log file is excluded from GitHub. Pipeline logs include the selected mode and use UTF-8 encoding.
 
 ---
 
 ## Key Data Engineering Skills Demonstrated
 
+- Reproducible Demo Mode
+- Configurable Demo and Hybrid execution
 - Multi-source ingestion
 - CSV and Excel processing
 - Dynamic header detection
@@ -584,6 +679,12 @@ The log file is excluded from GitHub.
 ---
 
 ## Challenges and Lessons Learned
+
+### Reproducibility without private data
+
+The repository defaults to Demo Mode so reviewers can clone and run the project using only version-controlled synthetic data.
+
+Hybrid Mode remains available for the private Pawchoice workbook without exposing that workbook in GitHub.
 
 ### Complex Excel structure
 
@@ -637,6 +738,8 @@ Potential future enhancements include:
 ---
 
 ## Repository Safety
+
+The repository should keep `pipeline.mode` set to `demo` before committing so a fresh clone can run immediately.
 
 Before committing, run:
 
