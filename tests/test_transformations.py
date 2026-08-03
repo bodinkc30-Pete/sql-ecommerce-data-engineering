@@ -1,4 +1,6 @@
+
 from pathlib import Path
+import json
 import sqlite3
 import sys
 import unittest
@@ -13,8 +15,66 @@ DATABASE_PATH = (
 )
 
 
+CONFIG_DIRECTORY = PROJECT_ROOT / "config"
+
+
+def load_pipeline_mode() -> str:
+    for config_path in sorted(
+        CONFIG_DIRECTORY.rglob("*.json")
+    ):
+        try:
+            config_data = json.loads(
+                config_path.read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+        ):
+            continue
+
+        pipeline_config = config_data.get(
+            "pipeline"
+        )
+
+        if not isinstance(
+            pipeline_config,
+            dict,
+        ):
+            continue
+
+        pipeline_mode = pipeline_config.get(
+            "mode"
+        )
+
+        if isinstance(
+            pipeline_mode,
+            str,
+        ):
+            normalized_mode = (
+                pipeline_mode
+                .strip()
+                .lower()
+            )
+
+            if normalized_mode in {
+                "demo",
+                "hybrid",
+            }:
+                return normalized_mode
+
+    raise RuntimeError(
+        "ไม่พบ pipeline.mode ที่ถูกต้องในไฟล์ JSON "
+        "ภายใต้โฟลเดอร์ config "
+        "(รองรับเฉพาะ demo หรือ hybrid)"
+    )
+
+
 class TransformationTestCase(unittest.TestCase):
     connection: sqlite3.Connection
+    pipeline_mode: str
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -34,9 +94,20 @@ class TransformationTestCase(unittest.TestCase):
             "PRAGMA foreign_keys = ON;"
         )
 
+        cls.pipeline_mode = load_pipeline_mode()
+
     @classmethod
     def tearDownClass(cls) -> None:
         cls.connection.close()
+
+    def require_hybrid_mode(
+        self,
+    ) -> None:
+        if self.pipeline_mode != "hybrid":
+            self.skipTest(
+                "ข้ามการทดสอบข้อมูล Pawchoice "
+                "เพราะ Pipeline กำลังใช้ Demo Mode"
+            )
 
     def get_row_count(
         self,
@@ -184,6 +255,8 @@ class TransformationTestCase(unittest.TestCase):
     def test_pawchoice_staging_created_rows(
         self,
     ) -> None:
+        self.require_hybrid_mode()
+
         staging_count = self.get_row_count(
             "stg_influencer_payments"
         )
@@ -200,6 +273,8 @@ class TransformationTestCase(unittest.TestCase):
     def test_campaign_transformation_created_rows(
         self,
     ) -> None:
+        self.require_hybrid_mode()
+
         campaign_count = self.get_row_count(
             "campaigns"
         )
@@ -213,6 +288,8 @@ class TransformationTestCase(unittest.TestCase):
     def test_influencer_transformation_created_rows(
         self,
     ) -> None:
+        self.require_hybrid_mode()
+
         influencer_count = self.get_row_count(
             "influencers"
         )
@@ -226,6 +303,8 @@ class TransformationTestCase(unittest.TestCase):
     def test_influencer_payment_rows_exist(
         self,
     ) -> None:
+        self.require_hybrid_mode()
+
         payment_count = self.get_row_count(
             "influencer_payments"
         )
