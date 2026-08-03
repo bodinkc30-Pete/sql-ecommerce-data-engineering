@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import os
 import subprocess
 import sys
 import time
@@ -125,6 +126,18 @@ def validate_script_exists(
         )
 
 
+def create_child_environment() -> dict[str, str]:
+    child_environment = os.environ.copy()
+
+    child_environment["PYTHONIOENCODING"] = (
+        "utf-8"
+    )
+
+    child_environment["PYTHONUTF8"] = "1"
+
+    return child_environment
+
+
 def run_script(
     step_number: int,
     step_name: str,
@@ -163,16 +176,21 @@ def run_script(
 
     started_at = time.perf_counter()
 
+    child_environment = (
+        create_child_environment()
+    )
+
     process = subprocess.run(
         [
             sys.executable,
             str(script_path),
         ],
         cwd=PROJECT_ROOT,
+        env=child_environment,
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="strict",
         check=False,
     )
 
@@ -182,24 +200,32 @@ def run_script(
     )
 
     if process.stdout:
-        print(
+        standard_output = (
             process.stdout.rstrip()
+        )
+
+        print(
+            standard_output
         )
 
         write_log(
             f"STDOUT | {step_name}\n"
-            f"{process.stdout.rstrip()}"
+            f"{standard_output}"
         )
 
     if process.stderr:
+        standard_error = (
+            process.stderr.rstrip()
+        )
+
         print(
-            process.stderr.rstrip(),
+            standard_error,
             file=sys.stderr,
         )
 
         write_log(
             f"STDERR | {step_name}\n"
-            f"{process.stderr.rstrip()}"
+            f"{standard_error}"
         )
 
     if process.returncode != 0:
@@ -335,7 +361,7 @@ def run_pipeline() -> None:
         "hybrid_ecommerce_data_pipeline"
     )
 
-    step_durations = {}
+    step_durations: dict[str, float] = {}
 
     for pipeline_step in PIPELINE_STEPS:
         elapsed_seconds = run_script(
@@ -418,6 +444,20 @@ def main() -> None:
         write_log(
             f"PIPELINE FAILED | "
             f"FILE ERROR | {error}"
+        )
+
+        sys.exit(1)
+
+    except UnicodeError as error:
+        print_separator()
+
+        print(
+            f"[ENCODING ERROR] {error}"
+        )
+
+        write_log(
+            f"PIPELINE FAILED | "
+            f"ENCODING ERROR | {error}"
         )
 
         sys.exit(1)
