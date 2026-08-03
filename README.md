@@ -1,4 +1,5 @@
 
+
 # SQL E-commerce Data Engineering
 
 [![Data Pipeline CI](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml/badge.svg)](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml)
@@ -654,6 +655,89 @@ The four skipped tests require the private Pawchoice workbook and run normally w
 
 ---
 
+## CI/CD and Downloadable Artifacts
+
+The repository includes a GitHub Actions workflow:
+
+```text
+.github/workflows/ci.yml
+```
+
+The workflow runs automatically on:
+
+- Pushes to `main`
+- Pull requests targeting `main`
+
+Each CI run performs the following steps:
+
+1. Checks out the repository
+2. Sets up Python 3.12
+3. Installs dependencies from `requirements.txt`
+4. Verifies that `pipeline.mode` is set to `demo`
+5. Runs the end-to-end Demo Mode pipeline
+6. Exports portfolio-safe CSV outputs
+7. Runs all 59 automated tests
+8. Uploads downloadable pipeline artifacts
+
+The CI workflow uses Demo Mode so it can run without the private Pawchoice workbook.
+
+### CI result
+
+A successful Demo Mode CI run produces:
+
+```text
+Pipeline: SUCCESS
+Tests: OK (skipped=4)
+```
+
+The four skipped tests require the private Pawchoice workbook and are expected to run only in Hybrid Mode.
+
+### Downloadable artifacts
+
+Each successful workflow run uploads an artifact named approximately:
+
+```text
+demo-pipeline-artifacts-<run-number>
+```
+
+The artifact is retained for 14 days and contains:
+
+```text
+demo-pipeline-artifacts-<run-number>/
+├── data/
+│   └── processed/
+│       ├── sample_campaign_payment_summary.csv
+│       ├── sample_data_quality_summary.csv
+│       ├── sample_ecommerce_daily_sales.csv
+│       ├── sample_payment_status_summary.csv
+│       ├── sample_pipeline_run_summary.csv
+│       └── sample_rejected_record_summary.csv
+├── database/
+│   └── ecommerce_data_engineering.db
+└── logs/
+    └── pipeline.log
+```
+
+These artifacts provide reproducible evidence of:
+
+- Successful pipeline execution
+- Generated analytical outputs
+- SQLite database creation
+- Pipeline logging
+- Automated test execution on a GitHub-hosted runner
+
+The CI artifact contains only Demo Mode outputs and does not include the private Pawchoice workbook or private source data.
+
+### How to download an artifact
+
+1. Open the repository on GitHub
+2. Select the **Actions** tab
+3. Open the latest **Data Pipeline CI** run
+4. Scroll to the **Artifacts** section
+5. Download `demo-pipeline-artifacts-<run-number>`
+
+---
+
 ## Example Successful Run
 
 ```text
@@ -699,6 +783,8 @@ The log file is excluded from GitHub. Pipeline logs include the selected mode an
 - Mode-aware automated testing
 - Analytical views
 - Portfolio-safe output generation
+- GitHub Actions CI/CD
+- Downloadable pipeline artifacts
 
 ---
 
@@ -754,7 +840,6 @@ Potential future enhancements include:
 - Schema migration tooling
 - Cloud object storage ingestion
 - Automated dashboard generation
-- CI/CD testing with GitHub Actions
 - Data observability alerts
 - Configurable Thai date normalization
 - Additional Pawchoice PDF ingestion
