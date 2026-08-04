@@ -64,3 +64,27 @@ jobs:
             database/ecommerce_data_engineering.db
           if-no-files-found: warn
           retention-days: 14
+
+  docker-test:
+    name: Build and Test Docker Image
+    runs-on: ubuntu-latest
+    needs:
+      - test
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Build Docker demo image
+        run: |
+          docker build \
+            --tag sql-ecommerce-data-engineering:ci \
+            .
+
+      - name: Run pipeline, export, and tests in Docker
+        run: |
+          docker run \
+            --rm \
+            --name sql-ecommerce-docker-ci \
+            sql-ecommerce-data-engineering:ci \
+            sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py && python -m unittest discover -s tests -v"

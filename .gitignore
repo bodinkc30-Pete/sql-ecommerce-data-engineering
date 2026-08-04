@@ -54,6 +54,7 @@ database/*.db-shm
 database/*.db-wal
 database/*.sqlite
 database/*.sqlite3
+database/docker/
 
 !database/.gitkeep
 
@@ -64,6 +65,7 @@ database/*.sqlite3
 
 logs/*.log
 logs/*.txt
+logs/docker/
 
 !logs/.gitkeep
 

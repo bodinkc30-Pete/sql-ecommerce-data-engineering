@@ -1,12 +1,12 @@
-
-
 # SQL E-commerce Data Engineering
 
 [![Data Pipeline CI](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml/badge.svg)](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml)
 
-A production-style data engineering project with two execution modes: a reproducible Demo Mode using synthetic e-commerce data, and a Hybrid Mode that combines synthetic transactions with a private Pawchoice influencer payment workbook.
+A production-style data engineering project with two execution modes: a reproducible Demo Mode using synthetic e-commerce data, and a Hybrid Mode that combines synthetic transactions with a private Pawchoice influencer-payment workbook.
 
 The pipeline ingests CSV and Excel sources, loads raw records into staging tables, applies SQL transformations, protects personally identifiable information, routes invalid records to rejected tables, validates data quality, and exports portfolio-safe analytical outputs.
+
+The project supports local Python execution, containerized Docker execution, automated testing, bind-mounted output persistence, and GitHub Actions CI/CD.
 
 ---
 
@@ -14,13 +14,13 @@ The pipeline ingests CSV and Excel sources, loads raw records into staging table
 
 This project demonstrates an end-to-end data pipeline using:
 
-- Python
+- Python 3.12
 - SQL
 - SQLite
 - openpyxl
 - CSV and Excel ingestion
 - Staging and core table architecture
-- Data quality validation
+- Data-quality validation
 - Rejected-record handling
 - Data lineage
 - PII hashing and masking
@@ -28,11 +28,14 @@ This project demonstrates an end-to-end data pipeline using:
 - Automated tests
 - Pipeline monitoring
 - Portfolio-safe data exports
+- Docker containerization
+- Non-root container execution
+- GitHub Actions CI/CD
 
 The project contains two data domains:
 
 1. Synthetic e-commerce transactions
-2. Pawchoice influencer payment records
+2. Pawchoice influencer-payment records
 
 The repository uses **Demo Mode by default** so anyone can clone and run the pipeline without private source files.
 
@@ -43,11 +46,13 @@ The repository uses **Demo Mode by default** so anyone can clone and run the pip
 ```mermaid
 flowchart LR
 
-    A1[Synthetic CSV Files] --> B[Raw Data Loader]
+    X[Local Python or Docker] --> B[Pipeline Orchestrator]
+
+    A1[Synthetic CSV Files] --> B
     A2[Pawchoice Excel<br/>Hybrid Mode only] --> B
 
-    B --> C1[Staging Tables]
-    C1 --> D[SQL Transformations]
+    B --> C[Staging Tables]
+    C --> D[SQL Transformations]
 
     D --> E1[E-commerce Core Tables]
     D --> E2[Influencer Payment Core Tables]
@@ -89,7 +94,7 @@ data/raw/synthetic/
 
 These files demonstrate relational e-commerce entities and transactional relationships.
 
-### Pawchoice private source data (Hybrid Mode only)
+### Pawchoice private source data — Hybrid Mode only
 
 The real-world source is:
 
@@ -129,9 +134,18 @@ The pipeline avoids storing raw sensitive information in the core database.
 | Notes | Sanitized |
 | Source location | Lineage fields only |
 
-Raw bank account numbers and phone numbers are not intentionally stored in the core tables.
+Raw bank-account numbers and phone numbers are not intentionally stored in the core tables.
 
-The SQLite database, private Excel files, PDFs, and logs are excluded through `.gitignore`.
+The following files are excluded from Git and Docker build contexts:
+
+- Private Pawchoice Excel files
+- Private PDFs
+- SQLite databases
+- Pipeline logs
+- Environment files
+- Generated Docker artifacts
+
+Docker copies only the synthetic source data and code required for Demo Mode into the public demonstration image.
 
 ---
 
@@ -139,18 +153,29 @@ The SQLite database, private Excel files, PDFs, and logs are excluded through `.
 
 ```text
 sql-ecommerce-data-engineering/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
 ├── config/
 │   └── pipeline_config.json
 │
 ├── data/
 │   ├── raw/
 │   │   ├── synthetic/
+│   │   │   ├── customers.csv
+│   │   │   ├── products.csv
+│   │   │   ├── orders.csv
+│   │   │   ├── order_items.csv
+│   │   │   └── payments.csv
 │   │   └── pawchoice/
 │   ├── staging/
 │   └── processed/
+│       └── docker/                       # Generated and ignored
 │
 ├── database/
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── docker/                           # Generated and ignored
 │
 ├── diagrams/
 │   ├── pipeline_architecture.md
@@ -163,7 +188,8 @@ sql-ecommerce-data-engineering/
 │       └── automated_tests_passed.png
 │
 ├── logs/
-│   └── .gitkeep
+│   ├── .gitkeep
+│   └── docker/                           # Generated and ignored
 │
 ├── quality_checks/
 │   ├── 01_null_checks.sql
@@ -208,7 +234,9 @@ sql-ecommerce-data-engineering/
 │   ├── 06_incremental_load.sql
 │   └── 07_clean_influencer_payments.sql
 │
+├── .dockerignore
 ├── .gitignore
+├── Dockerfile
 ├── README.md
 └── requirements.txt
 ```
@@ -229,7 +257,7 @@ Creates:
 - Foreign keys
 - 28 indexes
 - 13 analytical views
-- Pipeline audit structures
+- Pipeline-audit structures
 - `pipeline_watermark` for incremental-load state
 
 ### 2. Raw data ingestion
@@ -261,7 +289,7 @@ Performs:
 - Rejected-record routing
 - PII protection
 
-### 4. Data quality validation
+### 4. Data-quality validation
 
 ```text
 scripts/04_run_quality_checks.py
@@ -317,7 +345,7 @@ products → order_items
 orders → payments
 ```
 
-### Influencer payment domain
+### Influencer-payment domain
 
 Core tables:
 
@@ -350,7 +378,7 @@ The project checks for:
 - Missing foreign-key references
 - Negative amounts
 - Invalid payment statuses
-- Payment reconciliation differences
+- Payment-reconciliation differences
 - Unmasked account names
 - Invalid SHA-256 hash lengths
 - Missing rejected-record reasons
@@ -358,6 +386,8 @@ The project checks for:
 - Unknown campaign sections
 
 A successful quality-check run returns no invalid records from the six SQL quality-check files.
+
+The Pipeline stops with a non-zero exit code when a required stage or quality check fails.
 
 ---
 
@@ -404,13 +434,14 @@ Examples:
 - Influencer payments use a unique `record_hash`
 - Staging data is refreshed by source file
 - UPSERT logic updates existing records
+- Watermark state is stored in `pipeline_watermark`
 - Incremental-load tests run against a temporary database copy
 
 ---
 
 ## Automated Tests
 
-Run all tests:
+Run all tests locally:
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py" -v
@@ -423,13 +454,20 @@ Ran 59 tests
 OK (skipped=4)
 ```
 
-In Demo Mode, 55 tests pass and 4 Pawchoice-specific transformation tests are skipped because the private workbook is intentionally unavailable.
+In Demo Mode:
 
-In Hybrid Mode, those four tests run normally and verify that Pawchoice staging, campaign, influencer, and influencer-payment records were created.
+```text
+Passed: 55
+Skipped: 4
+Failed: 0
+Errors: 0
+```
 
-### Test Evidence
+The four Pawchoice-specific tests are skipped because the private workbook is intentionally unavailable.
 
-![Automated tests passed](docs/images/automated_tests_passed.png)
+In Hybrid Mode, those tests run normally and verify that Pawchoice staging, campaign, influencer, and influencer-payment records were created.
+
+### Test coverage
 
 The tests cover:
 
@@ -447,6 +485,10 @@ The tests cover:
 - Idempotency
 - SQLite integrity
 
+### Test evidence
+
+![Automated tests passed](docs/images/automated_tests_passed.png)
+
 ---
 
 ## Pipeline Results
@@ -461,7 +503,7 @@ Views: 13
 Indexes: 28
 ```
 
-It then processes only the version-controlled synthetic files:
+It processes only the version-controlled synthetic files:
 
 ```text
 Synthetic staging records: 27
@@ -469,7 +511,7 @@ Pawchoice staging records: 0
 Total raw records loaded: 27
 ```
 
-The e-commerce transformations and all quality checks complete successfully without the private workbook.
+The e-commerce transformations and all six quality-check files complete successfully without the private workbook.
 
 ### Hybrid Mode result
 
@@ -489,13 +531,49 @@ Rejected influencer records: 241
 Total Pawchoice records: 522
 ```
 
-The valid and rejected record totals reconcile exactly to the number of Pawchoice staging records.
+The valid and rejected totals reconcile exactly to the number of Pawchoice staging records.
 
-### End-to-End Pipeline Evidence
+### Docker-verified result
+
+The Docker demonstration was validated using Docker Desktop with a Linux container backend.
+
+Verified results:
+
+```text
+Docker Client: 29.6.2
+Docker Server: 29.6.2
+Base image: python:3.12-slim
+Build steps: 20/20 completed
+Build context: approximately 300 KB
+Pipeline mode: DEMO
+Tables: 17
+Views: 13
+Indexes: 28
+Raw records: 27
+Quality-check files passed: 6
+Automated tests: 59
+Passed: 55
+Skipped: 4
+Failed: 0
+Errors: 0
+Exported CSV files: 6
+Exported rows: 7
+```
+
+Observed example runtimes:
+
+```text
+Ephemeral Docker run: 0.66 seconds
+Bind-mounted Docker run: 3.88 seconds
+```
+
+Runtime varies by operating system, Docker configuration, storage, and available resources.
+
+### End-to-end pipeline evidence
 
 ![Pipeline completed successfully](docs/images/pipeline_success.png)
 
-### Data Quality Evidence
+### Data-quality evidence
 
 ![All quality checks passed](docs/images/quality_checks_passed.png)
 
@@ -531,11 +609,13 @@ The exports intentionally exclude:
 - Phone-number hashes
 - Masked account names
 - Notes
-- Source row numbers
+- Source-row numbers
 
 ---
 
 ## Installation
+
+### Option 1: Local Python installation
 
 Clone the repository:
 
@@ -555,6 +635,24 @@ Required package:
 ```text
 openpyxl==3.1.5
 ```
+
+### Option 2: Docker installation
+
+Requirements:
+
+- Docker Desktop or Docker Engine
+- Linux container support
+- Docker CLI
+- Docker Compose is not required
+
+Verify Docker:
+
+```bash
+docker --version
+docker info
+```
+
+The Docker image installs Python and project dependencies automatically.
 
 ---
 
@@ -582,6 +680,7 @@ Demo Mode:
 - Clears influencer staging data to prevent stale private-source records
 - Runs transformations, quality checks, auditing, and logging normally
 - Is the recommended mode for reviewers and first-time users
+- Is the only mode included in the public Docker image
 
 ### Hybrid Mode — private source enabled
 
@@ -622,7 +721,7 @@ Any other value causes a clear configuration error.
 
 ---
 
-## How to Run
+## How to Run Locally
 
 ### Run the complete pipeline
 
@@ -655,9 +754,124 @@ The four skipped tests require the private Pawchoice workbook and run normally w
 
 ---
 
+## Docker Execution
+
+The Docker image is designed for reproducible Demo Mode execution.
+
+The `Dockerfile`:
+
+- Uses `python:3.12-slim`
+- Installs dependencies from `requirements.txt`
+- Copies only required source code and synthetic input files
+- Excludes the private Pawchoice workbook
+- Creates writable Database, Log, Staging, and Processed directories
+- Runs the application as the non-root user `appuser`
+- Starts `scripts/05_run_pipeline.py` by default
+
+The `.dockerignore` excludes:
+
+- Git history
+- IDE settings
+- Virtual environments
+- Environment files
+- Private Pawchoice data
+- Existing databases
+- Existing logs
+- Existing generated outputs
+- Documentation not required at runtime
+
+### Build the Demo image
+
+Run from the project root:
+
+```bash
+docker build --tag sql-ecommerce-data-engineering:demo .
+```
+
+### Run the Demo pipeline
+
+```bash
+docker run --rm --name sql-ecommerce-demo sql-ecommerce-data-engineering:demo
+```
+
+This creates an ephemeral Container. The Container and its internal outputs are removed when the process finishes.
+
+### Run the Pipeline and Tests in one Container
+
+```bash
+docker run --rm --name sql-ecommerce-tests sql-ecommerce-data-engineering:demo sh -c "python scripts/05_run_pipeline.py && python -m unittest discover -s tests -v"
+```
+
+The Pipeline must run before the Tests because the Tests validate the generated SQLite Database.
+
+Expected result:
+
+```text
+Ran 59 tests
+OK (skipped=4)
+```
+
+### Persist Docker outputs on Windows Command Prompt
+
+Create dedicated output directories:
+
+```bat
+mkdir database\docker logs\docker data\processed\docker
+```
+
+Run the Pipeline and Export Script with bind mounts:
+
+```bat
+docker run --rm --name sql-ecommerce-artifacts -v "%cd%\database\docker:/app/database" -v "%cd%\logs\docker:/app/logs" -v "%cd%\data\processed\docker:/app/data/processed" sql-ecommerce-data-engineering:demo sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py"
+```
+
+### Persist Docker outputs on macOS or Linux
+
+Create dedicated output directories:
+
+```bash
+mkdir -p database/docker logs/docker data/processed/docker
+```
+
+Run with bind mounts:
+
+```bash
+docker run --rm \
+  --name sql-ecommerce-artifacts \
+  -v "$(pwd)/database/docker:/app/database" \
+  -v "$(pwd)/logs/docker:/app/logs" \
+  -v "$(pwd)/data/processed/docker:/app/data/processed" \
+  sql-ecommerce-data-engineering:demo \
+  sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py"
+```
+
+### Persisted output locations
+
+After a successful bind-mounted run:
+
+```text
+database/docker/
+└── ecommerce_data_engineering.db
+
+logs/docker/
+└── pipeline.log
+
+data/processed/docker/
+├── sample_campaign_payment_summary.csv
+├── sample_data_quality_summary.csv
+├── sample_ecommerce_daily_sales.csv
+├── sample_payment_status_summary.csv
+├── sample_pipeline_run_summary.csv
+└── sample_rejected_record_summary.csv
+```
+
+These generated Docker directories are excluded through `.gitignore`.
+
+---
+
 ## CI/CD and Downloadable Artifacts
 
-The repository includes a GitHub Actions workflow:
+The repository includes:
 
 ```text
 .github/workflows/ci.yml
@@ -668,33 +882,50 @@ The workflow runs automatically on:
 - Pushes to `main`
 - Pull requests targeting `main`
 
-Each CI run performs the following steps:
+The workflow contains two jobs.
+
+### Job 1: Local Python pipeline and tests
+
+This job:
 
 1. Checks out the repository
 2. Sets up Python 3.12
-3. Installs dependencies from `requirements.txt`
-4. Verifies that `pipeline.mode` is set to `demo`
-5. Runs the end-to-end Demo Mode pipeline
+3. Installs dependencies
+4. Verifies that `pipeline.mode` is `demo`
+5. Runs the end-to-end Demo Pipeline
 6. Exports portfolio-safe CSV outputs
 7. Runs all 59 automated tests
-8. Uploads downloadable pipeline artifacts
+8. Uploads downloadable Pipeline artifacts
 
-The CI workflow uses Demo Mode so it can run without the private Pawchoice workbook.
+### Job 2: Docker build and tests
 
-### CI result
+The `docker-test` job runs after Job 1 succeeds.
 
-A successful Demo Mode CI run produces:
+It:
+
+1. Checks out the repository
+2. Builds `sql-ecommerce-data-engineering:ci`
+3. Starts a Linux Container
+4. Runs the Demo Pipeline
+5. Exports Portfolio Outputs
+6. Runs all 59 Automated Tests in the same Container
+7. Fails the workflow if the Docker build, Pipeline, Export, or Tests fail
+
+The CI workflow uses Demo Mode and never requires the private Pawchoice workbook.
+
+### Expected CI result
 
 ```text
-Pipeline: SUCCESS
+Run Demo Pipeline and Tests: SUCCESS
+Build and Test Docker Image: SUCCESS
 Tests: OK (skipped=4)
 ```
 
-The four skipped tests require the private Pawchoice workbook and are expected to run only in Hybrid Mode.
+The four skipped tests require the private Pawchoice workbook and are expected in Demo Mode.
 
 ### Downloadable artifacts
 
-Each successful workflow run uploads an artifact named approximately:
+Each successful Python workflow job uploads an artifact named approximately:
 
 ```text
 demo-pipeline-artifacts-<run-number>
@@ -720,13 +951,13 @@ demo-pipeline-artifacts-<run-number>/
 
 These artifacts provide reproducible evidence of:
 
-- Successful pipeline execution
+- Successful Pipeline execution
 - Generated analytical outputs
-- SQLite database creation
+- SQLite Database creation
 - Pipeline logging
-- Automated test execution on a GitHub-hosted runner
+- Automated Test execution on a GitHub-hosted runner
 
-The CI artifact contains only Demo Mode outputs and does not include the private Pawchoice workbook or private source data.
+The artifact contains only Demo Mode outputs. It does not contain the Pawchoice workbook or private source data.
 
 ### How to download an artifact
 
@@ -750,13 +981,19 @@ RUN_QUALITY_CHECKS    SUCCESS
 PIPELINE SUCCESS
 ```
 
-The pipeline also writes execution logs to:
+The Pipeline writes execution logs to:
 
 ```text
 logs/pipeline.log
 ```
 
-The log file is excluded from GitHub. Pipeline logs include the selected mode and use UTF-8 encoding.
+A bind-mounted Docker run writes its Log to:
+
+```text
+logs/docker/pipeline.log
+```
+
+Pipeline Logs include the selected mode and use UTF-8 encoding.
 
 ---
 
@@ -773,7 +1010,7 @@ The log file is excluded from GitHub. Pipeline logs include the selected mode an
 - UPSERT processing
 - Incremental loading
 - Idempotent pipeline design
-- Data quality engineering
+- Data-quality engineering
 - Referential integrity
 - Reconciliation
 - Dead-letter and rejected-record handling
@@ -783,8 +1020,14 @@ The log file is excluded from GitHub. Pipeline logs include the selected mode an
 - Mode-aware automated testing
 - Analytical views
 - Portfolio-safe output generation
+- Docker image creation
+- Linux container execution
+- Non-root container security
+- Bind-mounted artifact persistence
+- Container lifecycle troubleshooting
 - GitHub Actions CI/CD
-- Downloadable pipeline artifacts
+- Docker CI validation
+- Downloadable Pipeline artifacts
 
 ---
 
@@ -794,13 +1037,13 @@ The log file is excluded from GitHub. Pipeline logs include the selected mode an
 
 The repository defaults to Demo Mode so reviewers can clone and run the project using only version-controlled synthetic data.
 
-Hybrid Mode remains available for the private Pawchoice workbook without exposing that workbook in GitHub.
+Hybrid Mode remains available for the private Pawchoice workbook without exposing that workbook through GitHub or the public Docker image.
 
 ### Complex Excel structure
 
 The Pawchoice workbook contains multiple table sections and repeated headers within one worksheet.
 
-The loader therefore detects headers dynamically rather than assuming the table begins on the first row.
+The loader detects headers dynamically instead of assuming the table begins on the first row.
 
 ### Mixed-language status values
 
@@ -816,7 +1059,7 @@ CANCELLED
 
 The source workbook may contain names, bank accounts, phone numbers, and private notes.
 
-The pipeline hashes, masks, or sanitizes these fields before loading them into the core model.
+The Pipeline hashes, masks, or sanitizes these fields before loading them into the core model.
 
 ### Invalid source records
 
@@ -826,7 +1069,46 @@ They are routed to a rejected-record table with a specific reason and source lin
 
 ### Repeatable processing
 
-The pipeline uses business keys, unique constraints, source locations, and record hashes to prevent duplicate data when the same files are processed again.
+The Pipeline uses business keys, unique constraints, source locations, record hashes, and watermark state to prevent duplicate data when the same files are processed again.
+
+### Docker Container lifecycle
+
+The initial Docker Test attempt ran the Pipeline and Tests in two separate Containers.
+
+The first Container created the SQLite Database and was removed by `--rm`. The second Container started from the original Image without that generated Database, causing four `setUpClass` errors:
+
+```text
+FileNotFoundError: database not found
+Ran 0 tests
+FAILED (errors=4)
+```
+
+The fix was to run the Pipeline and Tests sequentially inside the same Container:
+
+```bash
+sh -c "python scripts/05_run_pipeline.py && python -m unittest discover -s tests -v"
+```
+
+After the fix:
+
+```text
+Ran 59 tests
+OK (skipped=4)
+```
+
+This demonstrates practical troubleshooting of ephemeral Container storage and process lifecycle.
+
+### Persistent Docker outputs
+
+Container files normally disappear when an ephemeral Container is removed.
+
+Bind mounts were added for:
+
+- SQLite Database
+- Pipeline Log
+- Portfolio-safe CSV Outputs
+
+This preserves generated artifacts on the host while allowing the Container itself to be removed safely.
 
 ---
 
@@ -836,19 +1118,21 @@ Potential future enhancements include:
 
 - Apache Airflow orchestration
 - PostgreSQL migration
-- Docker-based execution
-- Schema migration tooling
-- Cloud object storage ingestion
+- Docker Compose commands
+- Container vulnerability scanning
+- Multi-platform Docker builds
+- Schema-migration tooling
+- Cloud object-storage ingestion
 - Automated dashboard generation
-- Data observability alerts
-- Configurable Thai date normalization
+- Data-observability alerts
+- Configurable Thai-date normalization
 - Additional Pawchoice PDF ingestion
 
 ---
 
 ## Repository Safety
 
-The repository should keep `pipeline.mode` set to `demo` before committing so a fresh clone can run immediately.
+The repository should keep `pipeline.mode` set to `demo` before committing so a fresh clone and CI run can execute without private files.
 
 Before committing, run:
 
@@ -856,18 +1140,30 @@ Before committing, run:
 git status
 ```
 
-Confirm that the following files are not included:
+Confirm that the following files and directories are not included:
 
 ```text
-pawchoice_payments.xlsx
-pawchoice_influencer.pdf
-pawchoice_live.pdf
-pawchoice_post_content.pdf
-ecommerce_data_engineering.db
-pipeline.log
+data/raw/pawchoice/pawchoice_payments.xlsx
+data/raw/pawchoice/*.pdf
+database/ecommerce_data_engineering.db
+database/docker/
+logs/pipeline.log
+logs/docker/
+data/processed/docker/
+.env
 ```
 
-Only portfolio-safe samples should be committed.
+Files that should be included for Docker support:
+
+```text
+Dockerfile
+.dockerignore
+.gitignore
+.github/workflows/ci.yml
+README.md
+```
+
+Only portfolio-safe code, configuration, documentation, synthetic inputs, and sample outputs should be committed.
 
 ---
 
@@ -875,4 +1171,4 @@ Only portfolio-safe samples should be committed.
 
 Data Engineering Portfolio Project
 
-Focused on building reliable, testable, privacy-aware, and auditable data pipelines.
+Focused on building reliable, testable, privacy-aware, auditable, reproducible, and containerized data pipelines.
