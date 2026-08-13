@@ -35,6 +35,12 @@ jobs:
         run: |
           python -c "import json; from pathlib import Path; config=json.loads(Path('config/pipeline_config.json').read_text(encoding='utf-8')); assert config['pipeline']['mode'].lower() == 'demo', 'CI requires pipeline mode to be demo'; print('Pipeline mode: DEMO')"
 
+      - name: Validate fresh database reproducibility
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+        run: python -m unittest tests.test_fresh_database_setup -v
+
       - name: Run end-to-end demo pipeline
         env:
           PYTHONIOENCODING: utf-8
@@ -81,10 +87,10 @@ jobs:
             --tag sql-ecommerce-data-engineering:ci \
             .
 
-      - name: Run pipeline, export, and tests in Docker
+      - name: Validate fresh setup, run pipeline, export, and tests in Docker
         run: |
           docker run \
             --rm \
             --name sql-ecommerce-docker-ci \
             sql-ecommerce-data-engineering:ci \
-            sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py && python -m unittest discover -s tests -v"
+            sh -c "python -m unittest tests.test_fresh_database_setup -v && python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py && python -m unittest discover -s tests -p 'test_*.py' -v"

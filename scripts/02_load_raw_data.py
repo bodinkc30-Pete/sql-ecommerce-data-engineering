@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -188,6 +189,164 @@ def get_pipeline_mode(
         )
 
     return pipeline_mode
+
+
+def get_run_context() -> tuple[str, str | None, str | None]:
+    run_type = (
+        os.environ.get("PIPELINE_RUN_TYPE", "NORMAL")
+        .strip()
+        .upper()
+    )
+    backfill_start_date = os.environ.get(
+        "PIPELINE_BACKFILL_START_DATE"
+    )
+    backfill_end_date = os.environ.get(
+        "PIPELINE_BACKFILL_END_DATE"
+    )
+
+    if run_type != "BACKFILL":
+        return run_type, None, None
+
+    if not backfill_start_date or not backfill_end_date:
+        raise ValueError(
+            "BACKFILL mode requires "
+            "PIPELINE_BACKFILL_START_DATE and "
+            "PIPELINE_BACKFILL_END_DATE."
+        )
+
+    try:
+        start_date = datetime.strptime(
+            backfill_start_date,
+            "%Y-%m-%d",
+        ).date()
+        end_date = datetime.strptime(
+            backfill_end_date,
+            "%Y-%m-%d",
+        ).date()
+    except ValueError as error:
+        raise ValueError(
+            "Backfill environment dates must use YYYY-MM-DD format."
+        ) from error
+
+    if start_date > end_date:
+        raise ValueError(
+            "Backfill start date must be on or before end date."
+        )
+
+    return (
+        run_type,
+        backfill_start_date,
+        backfill_end_date,
+    )
+
+
+def parse_business_date(value: str | None) -> Any:
+    if value is None:
+        return None
+
+    try:
+        return datetime.strptime(
+            value.strip(),
+            "%Y-%m-%d",
+        ).date()
+    except (ValueError, AttributeError):
+        return None
+
+
+def filter_backfill_synthetic_rows(
+    all_rows: dict[str, list[dict[str, str | None]]],
+    backfill_start_date: str,
+    backfill_end_date: str,
+) -> dict[str, list[dict[str, str | None]]]:
+    start_date = datetime.strptime(
+        backfill_start_date,
+        "%Y-%m-%d",
+    ).date()
+    end_date = datetime.strptime(
+        backfill_end_date,
+        "%Y-%m-%d",
+    ).date()
+
+    orders = [
+        row
+        for row in all_rows["orders"]
+        if (
+            (order_date := parse_business_date(row.get("order_date")))
+            is not None
+            and start_date <= order_date <= end_date
+        )
+    ]
+
+    order_ids = {
+        row["order_id"]
+        for row in orders
+        if row.get("order_id")
+    }
+
+    order_items = [
+        row
+        for row in all_rows["order_items"]
+        if row.get("order_id") in order_ids
+    ]
+
+    product_ids = {
+        row["product_id"]
+        for row in order_items
+        if row.get("product_id")
+    }
+
+    customer_ids = {
+        row["customer_id"]
+        for row in orders
+        if row.get("customer_id")
+    }
+
+    customers = [
+        row
+        for row in all_rows["customers"]
+        if row.get("customer_id") in customer_ids
+    ]
+
+    products = [
+        row
+        for row in all_rows["products"]
+        if row.get("product_id") in product_ids
+    ]
+
+    payments = [
+        row
+        for row in all_rows["payments"]
+        if (
+            row.get("order_id") in order_ids
+            and (
+                (payment_date := parse_business_date(
+                    row.get("payment_date")
+                ))
+                is not None
+                and start_date <= payment_date <= end_date
+            )
+        )
+    ]
+
+    filtered_rows = {
+        "customers": customers,
+        "products": products,
+        "orders": orders,
+        "order_items": order_items,
+        "payments": payments,
+    }
+
+    print(
+        "[INFO] Backfill staging filter | "
+        f"{backfill_start_date} -> {backfill_end_date}"
+    )
+    for dataset_name, rows in filtered_rows.items():
+        print(
+            f"[INFO] Backfill rows | "
+            f"{dataset_name}={len(rows)}"
+        )
+
+    return filtered_rows
 
 
 def normalize_value(value: Any) -> str | None:
@@ -383,15 +542,28 @@ def load_synthetic_csv(
     file_path: Path,
     table_name: str,
     columns: list[str],
+    rows_override: list[dict[str, str | None]] | None = None,
 ) -> int:
-    rows = read_csv_rows(
-        file_path=file_path,
-        expected_columns=columns,
+    rows = (
+        rows_override
+        if rows_override is not None
+        else read_csv_rows(
+            file_path=file_path,
+            expected_columns=columns,
+        )
+    )
+
+    connection.execute(
+        f"""
+        DELETE FROM {table_name}
+        WHERE source_file = ?;
+        """,
+        (file_path.name,),
     )
 
     if not rows:
         print(
-            f"[WARNING] ไม่พบข้อมูลในไฟล์: "
+            f"[WARNING] ไม่มีข้อมูลที่อยู่ในขอบเขตสำหรับ "
             f"{file_path.name}"
         )
         return 0
@@ -418,14 +590,6 @@ def load_synthetic_csv(
                 loaded_at,
             )
         )
-
-    connection.execute(
-        f"""
-        DELETE FROM {table_name}
-        WHERE source_file = ?;
-        """,
-        (file_path.name,),
-    )
 
     connection.executemany(
         insert_statement,
@@ -874,6 +1038,19 @@ def load_all_raw_data() -> None:
         config
     )
 
+    (
+        run_type,
+        backfill_start_date,
+        backfill_end_date,
+    ) = get_run_context()
+
+    if run_type == "BACKFILL" and pipeline_mode == "hybrid":
+        raise ValueError(
+            "BACKFILL currently supports the synthetic "
+            "e-commerce domain in DEMO mode only. "
+            "Pawchoice date-range backfill is not enabled yet."
+        )
+
     directories = config["directories"]
 
     synthetic_directory = (
@@ -918,10 +1095,38 @@ def load_all_raw_data() -> None:
         required_file_paths
     )
 
+    backfill_rows: (
+        dict[str, list[dict[str, str | None]]] | None
+    ) = None
+
+    if run_type == "BACKFILL":
+        assert backfill_start_date is not None
+        assert backfill_end_date is not None
+
+        all_rows = {}
+        for dataset_name, load_config in (
+            SYNTHETIC_LOAD_CONFIG.items()
+        ):
+            file_path = (
+                synthetic_directory
+                / synthetic_files[dataset_name]
+            )
+            all_rows[dataset_name] = read_csv_rows(
+                file_path=file_path,
+                expected_columns=load_config["columns"],
+            )
+
+        backfill_rows = filter_backfill_synthetic_rows(
+            all_rows=all_rows,
+            backfill_start_date=backfill_start_date,
+            backfill_end_date=backfill_end_date,
+        )
+
     print(
         f"[INFO] Pipeline mode: "
         f"{pipeline_mode.upper()}"
     )
+    print(f"[INFO] Run type: {run_type}")
 
     total_loaded_rows = 0
 
@@ -954,6 +1159,11 @@ def load_all_raw_data() -> None:
                     columns=load_config[
                         "columns"
                     ],
+                    rows_override=(
+                        backfill_rows[dataset_name]
+                        if backfill_rows is not None
+                        else None
+                    ),
                 )
 
                 total_loaded_rows += loaded_rows

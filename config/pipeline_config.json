@@ -31,7 +31,18 @@
         "watermark_column": "loaded_at",
         "default_watermark": "1900-01-01 00:00:00",
         "stop_on_quality_failure": true,
-        "timezone": "UTC"
+        "timezone": "UTC",
+        "incremental_lookback_minutes": 10,
+        "watermark_future_tolerance_minutes": 5
+    },
+    "monitoring": {
+        "sla_enabled": true,
+        "step_sla_seconds": {
+            "SETUP_DATABASE": 10.0,
+            "LOAD_RAW_DATA": 30.0,
+            "RUN_TRANSFORMATIONS": 15.0,
+            "RUN_QUALITY_CHECKS": 10.0
+        }
     },
     "privacy": {
         "hash_bank_accounts": true,
@@ -68,7 +79,15 @@
             "PAID",
             "UNPAID",
             "CANCELLED"
-        ]
+        ],
+        "thresholds": {
+            "error_max_issue_count": 5,
+            "error_max_issue_rate_percent": 1.0
+        },
+        "severity_policy": {
+            "critical_any_issue_fails": true,
+            "warning_stops_pipeline": false
+        }
     },
     "logging": {
         "enabled": true,

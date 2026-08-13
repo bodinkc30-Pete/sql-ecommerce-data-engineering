@@ -6,6 +6,8 @@ DROP VIEW IF EXISTS vw_payment_summary;
 DROP VIEW IF EXISTS vw_payment_reconciliation;
 DROP VIEW IF EXISTS vw_data_quality_summary;
 DROP VIEW IF EXISTS vw_pipeline_run_summary;
+DROP VIEW IF EXISTS vw_pipeline_step_monitoring;
+DROP VIEW IF EXISTS vw_pipeline_sla_monitoring;
 
 DROP VIEW IF EXISTS vw_influencer_payment_details;
 DROP VIEW IF EXISTS vw_campaign_payment_summary;
@@ -330,6 +332,110 @@ FROM pipeline_audit
 GROUP BY
     run_id,
     pipeline_name;
+
+
+CREATE VIEW vw_pipeline_step_monitoring AS
+SELECT
+    step_log_id,
+    pipeline_name,
+    run_id,
+    step_number,
+    step_name,
+    script_name,
+    attempt_number,
+    status,
+
+    start_time,
+    end_time,
+
+    ROUND(
+        duration_seconds,
+        4
+    ) AS duration_seconds,
+
+    rows_read,
+    rows_written,
+    rows_rejected,
+
+    error_type,
+    error_message,
+
+    ROUND(
+        sla_threshold_seconds,
+        4
+    ) AS sla_threshold_seconds,
+
+    sla_status,
+
+    CASE
+        WHEN duration_seconds IS NULL
+            OR sla_threshold_seconds IS NULL
+            THEN NULL
+
+        WHEN duration_seconds > sla_threshold_seconds
+            THEN ROUND(
+                duration_seconds - sla_threshold_seconds,
+                4
+            )
+
+        ELSE 0
+    END AS seconds_over_sla,
+
+    CASE
+        WHEN duration_seconds IS NULL
+            OR sla_threshold_seconds IS NULL
+            OR sla_threshold_seconds = 0
+            THEN NULL
+
+        ELSE ROUND(
+            duration_seconds
+            / sla_threshold_seconds
+            * 100,
+            2
+        )
+    END AS sla_utilization_percent,
+
+    created_at,
+    updated_at
+
+FROM pipeline_step_log;
+
+CREATE VIEW vw_pipeline_sla_monitoring AS
+SELECT
+    sla_metric_id,
+    pipeline_name,
+    run_id,
+    step_name,
+    attempt_number,
+    step_run_status,
+    ROUND(
+        duration_seconds,
+        4
+    ) AS duration_seconds,
+    ROUND(
+        sla_threshold_seconds,
+        4
+    ) AS sla_threshold_seconds,
+    ROUND(
+        CASE
+            WHEN duration_seconds
+                 > sla_threshold_seconds
+                THEN duration_seconds
+                     - sla_threshold_seconds
+            ELSE 0
+        END,
+        4
+    ) AS seconds_over_sla,
+    ROUND(
+        duration_seconds
+        / sla_threshold_seconds
+        * 100,
+        2
+    ) AS sla_utilization_percent,
+    sla_status,
+    measured_at,
+    created_at
+FROM pipeline_sla_metrics;
 
 
 CREATE VIEW vw_influencer_payment_details AS

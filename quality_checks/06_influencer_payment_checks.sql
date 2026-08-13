@@ -8,11 +8,7 @@ WITH influencer_quality_results AS (
         'สถานะการจ่ายต้องเป็น PAID, UNPAID หรือ CANCELLED'
             AS issue_description
     FROM influencer_payments
-    WHERE payment_status NOT IN (
-        'PAID',
-        'UNPAID',
-        'CANCELLED'
-    )
+    WHERE payment_status NOT IN (__ALLOWED_INFLUENCER_PAYMENT_STATUSES__)
 
     UNION ALL
 

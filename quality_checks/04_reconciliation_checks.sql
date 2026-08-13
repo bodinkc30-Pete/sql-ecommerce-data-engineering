@@ -15,7 +15,7 @@ GROUP BY
     o.order_total
 HAVING ABS(
     o.order_total - COALESCE(SUM(oi.line_total), 0)
-) > 0.01
+) > __AMOUNT_TOLERANCE__
 
 UNION ALL
 
@@ -31,7 +31,7 @@ SELECT
 FROM order_items AS oi
 WHERE ABS(
     oi.line_total - (oi.quantity * oi.unit_price)
-) > 0.01
+) > __AMOUNT_TOLERANCE__
 
 UNION ALL
 
@@ -85,7 +85,7 @@ HAVING ABS(
         ),
         0
     )
-) > 0.01
+) > __AMOUNT_TOLERANCE__
 
 UNION ALL
 
@@ -109,7 +109,7 @@ GROUP BY
     o.order_id,
     o.order_total
 HAVING COALESCE(SUM(p.payment_amount), 0)
-    > o.order_total + 0.01
+    > o.order_total + __AMOUNT_TOLERANCE__
 
 ORDER BY
     check_name,

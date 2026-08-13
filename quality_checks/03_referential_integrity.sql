@@ -1,4 +1,21 @@
 SELECT
+    'stg_orders' AS child_table,
+    'customer_id' AS foreign_key_column,
+    TRIM(so.customer_id) AS missing_reference_value,
+    COUNT(*) AS affected_rows
+FROM stg_orders AS so
+LEFT JOIN stg_customers AS sc
+    ON TRIM(so.customer_id) = TRIM(sc.customer_id)
+WHERE
+    so.customer_id IS NOT NULL
+    AND TRIM(so.customer_id) <> ''
+    AND sc.customer_id IS NULL
+GROUP BY
+    TRIM(so.customer_id)
+
+UNION ALL
+
+SELECT
     'orders' AS child_table,
     'customer_id' AS foreign_key_column,
     CAST(o.customer_id AS TEXT) AS missing_reference_value,

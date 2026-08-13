@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import sqlite3
 import sys
 import unittest
@@ -77,9 +78,149 @@ class QualityCheckTestCase(unittest.TestCase):
                 f"{file_path}"
             )
 
-        return file_path.read_text(
+        sql_script = file_path.read_text(
             encoding="utf-8"
         )
+
+        config_path = (
+            PROJECT_ROOT
+            / "config"
+            / "pipeline_config.json"
+        )
+
+        config = json.loads(
+            config_path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+        quality_config = config.get(
+            "quality",
+            {}
+        )
+
+        amount_tolerance = float(
+            quality_config.get(
+                "amount_tolerance",
+                0.01,
+            )
+        )
+
+        allowed_payment_statuses = (
+            quality_config.get(
+                "allowed_payment_statuses",
+                [
+                    "PENDING",
+                    "PAID",
+                    "FAILED",
+                    "REFUNDED",
+                    "CANCELLED",
+                ],
+            )
+        )
+
+        allowed_payment_methods = (
+            quality_config.get(
+                "allowed_payment_methods",
+                [
+                    "CREDIT_CARD",
+                    "DEBIT_CARD",
+                    "BANK_TRANSFER",
+                    "E_WALLET",
+                    "CASH",
+                ],
+            )
+        )
+
+        allowed_order_statuses = (
+            quality_config.get(
+                "allowed_order_statuses",
+                [
+                    "PENDING",
+                    "PROCESSING",
+                    "COMPLETED",
+                    "CANCELLED",
+                    "REFUNDED",
+                ],
+            )
+        )
+
+        allowed_influencer_payment_statuses = (
+            quality_config.get(
+                "allowed_influencer_payment_statuses",
+                [
+                    "PAID",
+                    "UNPAID",
+                    "CANCELLED",
+                ],
+            )
+        )
+
+        def sql_string_list(
+            values: list[str],
+        ) -> str:
+            return ", ".join(
+                "'" + str(value).replace(
+                    "'",
+                    "''",
+                ) + "'"
+                for value in values
+            )
+
+        replacements = {
+            "__AMOUNT_TOLERANCE__": str(
+                amount_tolerance
+            ),
+            "__ALLOWED_ORDER_STATUSES__": (
+                sql_string_list(
+                    allowed_order_statuses
+                )
+            ),
+            "__ALLOWED_PAYMENT_METHODS__": (
+                sql_string_list(
+                    allowed_payment_methods
+                )
+            ),
+            "__ALLOWED_PAYMENT_STATUSES__": (
+                sql_string_list(
+                    allowed_payment_statuses
+                )
+            ),
+            "__ALLOWED_INFLUENCER_PAYMENT_STATUSES__": (
+                sql_string_list(
+                    allowed_influencer_payment_statuses
+                )
+            ),
+        }
+
+        for placeholder, replacement in (
+            replacements.items()
+        ):
+            sql_script = sql_script.replace(
+                placeholder,
+                replacement,
+            )
+
+        unresolved_placeholders = [
+            token
+            for token in (
+                "__AMOUNT_TOLERANCE__",
+                "__ALLOWED_ORDER_STATUSES__",
+                "__ALLOWED_PAYMENT_METHODS__",
+                "__ALLOWED_PAYMENT_STATUSES__",
+                "__ALLOWED_INFLUENCER_PAYMENT_STATUSES__",
+            )
+            if token in sql_script
+        ]
+
+        if unresolved_placeholders:
+            raise ValueError(
+                "Quality Check SQL ยังมี placeholder "
+                "ที่ไม่ได้แทนค่า: "
+                f"{unresolved_placeholders}"
+            )
+
+        return sql_script
 
     def execute_sql_script(
         self,

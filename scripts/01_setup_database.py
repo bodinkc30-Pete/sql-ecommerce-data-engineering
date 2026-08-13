@@ -1,3 +1,4 @@
+from contextlib import closing
 from pathlib import Path
 import sqlite3
 import sys
@@ -22,17 +23,21 @@ SCHEMA_DIRECTORY = (
 
 
 SCHEMA_FILES = [
-    SCHEMA_DIRECTORY
-    / "01_create_staging_tables.sql",
+    SCHEMA_DIRECTORY / "01_create_staging_tables.sql",
+    SCHEMA_DIRECTORY / "02_create_core_tables.sql",
+    SCHEMA_DIRECTORY / "03_create_indexes.sql",
+    SCHEMA_DIRECTORY / "04_create_views.sql",
 
-    SCHEMA_DIRECTORY
-    / "02_create_core_tables.sql",
-
-    SCHEMA_DIRECTORY
-    / "03_create_indexes.sql",
-
-    SCHEMA_DIRECTORY
-    / "04_create_views.sql",
+    # Governance / Lineage
+    SCHEMA_DIRECTORY / "05_create_governance_tables.sql",
+    SCHEMA_DIRECTORY / "06_seed_data_assets.sql",
+    SCHEMA_DIRECTORY / "07_create_lineage_edges.sql",
+    SCHEMA_DIRECTORY / "08_seed_lineage_edges.sql",
+    SCHEMA_DIRECTORY / "09_correct_lineage_edges.sql",
+    SCHEMA_DIRECTORY / "10_create_lineage_run_events.sql",
+    SCHEMA_DIRECTORY / "11_create_governance_views.sql",
+    SCHEMA_DIRECTORY / "12_fix_governance_dependency_views.sql",
+    SCHEMA_DIRECTORY / "13_fix_pii_classification.sql",
 ]
 
 
@@ -137,6 +142,14 @@ def validate_required_tables(
         "influencer_payments",
         "rejected_influencer_records",
         "pipeline_audit",
+        "pipeline_watermark",
+        "pipeline_step_log",
+        "pipeline_sla_metrics",
+
+        # Governance / Lineage
+        "data_assets",
+        "lineage_edges",
+        "lineage_run_events",
     }
 
     actual_tables = set(
@@ -162,17 +175,27 @@ def validate_required_views(
     connection: sqlite3.Connection,
 ) -> None:
     required_views = {
+        "vw_order_details",
         "vw_customer_order_summary",
         "vw_product_sales_summary",
         "vw_daily_sales_summary",
         "vw_payment_reconciliation",
+        "vw_payment_summary",
         "vw_data_quality_summary",
         "vw_pipeline_run_summary",
+        "vw_pipeline_step_monitoring",
+        "vw_pipeline_sla_monitoring",
         "vw_influencer_payment_details",
         "vw_campaign_payment_summary",
         "vw_influencer_payment_summary",
         "vw_payment_status_summary",
         "vw_rejected_influencer_summary",
+
+        # Governance / Lineage
+        "vw_data_lineage",
+        "vw_lineage_run_history",
+        "vw_asset_upstream_dependencies",
+        "vw_asset_downstream_dependencies",
     }
 
     actual_views = set(
@@ -191,6 +214,82 @@ def validate_required_views(
         raise RuntimeError(
             "สร้าง View ไม่ครบ ขาด View: "
             f"{sorted(missing_views)}"
+        )
+
+
+def validate_governance_metadata(
+    connection: sqlite3.Connection,
+) -> None:
+    asset_count = connection.execute(
+        "SELECT COUNT(*) FROM data_assets;"
+    ).fetchone()[0]
+
+    lineage_edge_count = connection.execute(
+        "SELECT COUNT(*) FROM lineage_edges;"
+    ).fetchone()[0]
+
+    if asset_count <= 0:
+        raise RuntimeError(
+            "Governance metadata ไม่สมบูรณ์: data_assets ไม่มีข้อมูล"
+        )
+
+    if lineage_edge_count <= 0:
+        raise RuntimeError(
+            "Governance metadata ไม่สมบูรณ์: lineage_edges ไม่มีข้อมูล"
+        )
+
+    duplicate_asset_keys = connection.execute(
+        """
+        SELECT asset_key
+        FROM data_assets
+        GROUP BY asset_key
+        HAVING COUNT(*) > 1;
+        """
+    ).fetchall()
+
+    if duplicate_asset_keys:
+        raise RuntimeError(
+            "Governance metadata พบ asset_key ซ้ำ: "
+            f"{duplicate_asset_keys}"
+        )
+
+    invalid_pii_assets = connection.execute(
+        """
+        SELECT asset_key, classification
+        FROM data_assets
+        WHERE
+            contains_pii = 1
+            AND classification NOT IN (
+                'CONFIDENTIAL',
+                'RESTRICTED'
+            );
+        """
+    ).fetchall()
+
+    if invalid_pii_assets:
+        raise RuntimeError(
+            "Governance metadata พบ PII classification ไม่ถูกต้อง: "
+            f"{invalid_pii_assets}"
+        )
+
+    orphan_lineage_edges = connection.execute(
+        """
+        SELECT e.lineage_edge_id
+        FROM lineage_edges AS e
+        LEFT JOIN data_assets AS u
+            ON u.asset_id = e.upstream_asset_id
+        LEFT JOIN data_assets AS d
+            ON d.asset_id = e.downstream_asset_id
+        WHERE
+            u.asset_id IS NULL
+            OR d.asset_id IS NULL;
+        """
+    ).fetchall()
+
+    if orphan_lineage_edges:
+        raise RuntimeError(
+            "Governance metadata พบ orphan lineage edges: "
+            f"{orphan_lineage_edges}"
         )
 
 
@@ -278,8 +377,12 @@ def setup_database() -> None:
         f"{DATABASE_PATH}"
     )
 
-    with sqlite3.connect(
-        DATABASE_PATH
+    # sqlite3.Connection's context manager commits/rolls back, but it does
+    # not guarantee that the database handle itself is closed immediately.
+    # Explicit closing is important on Windows, where an open SQLite handle
+    # can keep temporary database files locked after setup completes.
+    with closing(
+        sqlite3.connect(DATABASE_PATH)
     ) as connection:
         connection.execute(
             "PRAGMA foreign_keys = ON;"
@@ -297,6 +400,10 @@ def setup_database() -> None:
             )
 
             validate_required_views(
+                connection
+            )
+
+            validate_governance_metadata(
                 connection
             )
 

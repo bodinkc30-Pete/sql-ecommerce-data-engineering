@@ -1,4 +1,32 @@
 SELECT
+    'stg_customers' AS table_name,
+    'customer_id' AS duplicate_key,
+    TRIM(customer_id) AS duplicate_value,
+    COUNT(*) AS duplicate_count
+FROM stg_customers
+WHERE
+    customer_id IS NOT NULL
+    AND TRIM(customer_id) <> ''
+GROUP BY TRIM(customer_id)
+HAVING COUNT(*) > 1
+
+UNION ALL
+
+SELECT
+    'stg_customers',
+    'email',
+    LOWER(TRIM(email)),
+    COUNT(*)
+FROM stg_customers
+WHERE
+    email IS NOT NULL
+    AND TRIM(email) <> ''
+GROUP BY LOWER(TRIM(email))
+HAVING COUNT(*) > 1
+
+UNION ALL
+
+SELECT
     'customers' AS table_name,
     'customer_id' AS duplicate_key,
     customer_id AS duplicate_value,
@@ -60,19 +88,6 @@ SELECT
     COUNT(*)
 FROM payments
 GROUP BY payment_id
-HAVING COUNT(*) > 1
-
-UNION ALL
-
-SELECT
-    'pipeline_audit',
-    'run_id + step_name',
-    run_id || ' | ' || step_name,
-    COUNT(*)
-FROM pipeline_audit
-GROUP BY
-    run_id,
-    step_name
 HAVING COUNT(*) > 1
 
 UNION ALL

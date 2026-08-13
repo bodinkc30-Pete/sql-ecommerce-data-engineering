@@ -1,3 +1,14 @@
+-- NORMAL incremental-load controller.
+-- IMPORTANT:
+-- `scripts/03_run_transformations.py` intentionally skips this file
+-- when PIPELINE_RUN_TYPE=BACKFILL. Backfill staging has already been
+-- filtered by business date, and historical reruns must NOT advance
+-- the normal `pipeline_watermark`.
+--
+-- Keep this SQL dedicated to NORMAL incremental processing.
+-- The runner injects __INCREMENTAL_LOOKBACK_MINUTES__ and
+-- __WATERMARK_FUTURE_TOLERANCE_MINUTES__ from pipeline_config.json.
+
 PRAGMA foreign_keys = ON;
 
 BEGIN TRANSACTION;
@@ -27,12 +38,13 @@ WITH incremental_customers AS (
         ) AS row_number
     FROM stg_customers
     WHERE
-        datetime(loaded_at) > datetime(
+        datetime(loaded_at) >= datetime(
             (
                 SELECT last_loaded_at
                 FROM pipeline_watermark
                 WHERE table_name = 'stg_customers'
-            )
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
         AND customer_id IS NOT NULL
         AND TRIM(customer_id) <> ''
@@ -43,6 +55,22 @@ WITH incremental_customers AS (
         AND LOWER(TRIM(email)) LIKE '%_@_%._%'
         AND signup_date IS NOT NULL
         AND DATE(TRIM(signup_date)) IS NOT NULL
+)
+,
+deduplicated_customers AS (
+    SELECT
+        customer_id,
+        customer_name,
+        email,
+        city,
+        signup_date,
+        loaded_at,
+        ROW_NUMBER() OVER (
+            PARTITION BY email
+            ORDER BY loaded_at DESC
+        ) AS email_row_number
+    FROM incremental_customers
+    WHERE row_number = 1
 )
 INSERT INTO customers (
     customer_id,
@@ -61,8 +89,8 @@ SELECT
     signup_date,
     CURRENT_TIMESTAMP,
     CURRENT_TIMESTAMP
-FROM incremental_customers
-WHERE row_number = 1
+FROM deduplicated_customers
+WHERE email_row_number = 1
 ON CONFLICT(customer_id) DO UPDATE SET
     customer_name = excluded.customer_name,
     email = excluded.email,
@@ -84,12 +112,13 @@ WITH incremental_products AS (
         ) AS row_number
     FROM stg_products
     WHERE
-        datetime(loaded_at) > datetime(
+        datetime(loaded_at) >= datetime(
             (
                 SELECT last_loaded_at
                 FROM pipeline_watermark
                 WHERE table_name = 'stg_products'
-            )
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
         AND product_id IS NOT NULL
         AND TRIM(product_id) <> ''
@@ -146,12 +175,13 @@ WITH incremental_orders AS (
         ) AS row_number
     FROM stg_orders
     WHERE
-        datetime(loaded_at) > datetime(
+        datetime(loaded_at) >= datetime(
             (
                 SELECT last_loaded_at
                 FROM pipeline_watermark
                 WHERE table_name = 'stg_orders'
-            )
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
         AND order_id IS NOT NULL
         AND TRIM(order_id) <> ''
@@ -217,12 +247,13 @@ WITH incremental_order_items AS (
         ) AS row_number
     FROM stg_order_items
     WHERE
-        datetime(loaded_at) > datetime(
+        datetime(loaded_at) >= datetime(
             (
                 SELECT last_loaded_at
                 FROM pipeline_watermark
                 WHERE table_name = 'stg_order_items'
-            )
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
         AND order_item_id IS NOT NULL
         AND TRIM(order_item_id) <> ''
@@ -297,12 +328,13 @@ WITH incremental_payments AS (
         ) AS row_number
     FROM stg_payments
     WHERE
-        datetime(loaded_at) > datetime(
+        datetime(loaded_at) >= datetime(
             (
                 SELECT last_loaded_at
                 FROM pipeline_watermark
                 WHERE table_name = 'stg_payments'
-            )
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
         AND payment_id IS NOT NULL
         AND TRIM(payment_id) <> ''
@@ -383,13 +415,14 @@ WHERE order_id IN (
     SELECT DISTINCT
         CAST(TRIM(order_id) AS INTEGER)
     FROM stg_order_items
-    WHERE datetime(loaded_at) > datetime(
-        (
-            SELECT last_loaded_at
-            FROM pipeline_watermark
-            WHERE table_name = 'stg_order_items'
+    WHERE datetime(loaded_at) >= datetime(
+            (
+                SELECT last_loaded_at
+                FROM pipeline_watermark
+                WHERE table_name = 'stg_order_items'
+            ),
+            '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
         )
-    )
 );
 
 UPDATE pipeline_watermark
@@ -398,6 +431,10 @@ SET
         (
             SELECT MAX(loaded_at)
             FROM stg_customers
+            WHERE datetime(loaded_at) <= datetime(
+                'now',
+                '+' || __WATERMARK_FUTURE_TOLERANCE_MINUTES__ || ' minutes'
+            )
         ),
         last_loaded_at
     ),
@@ -410,6 +447,10 @@ SET
         (
             SELECT MAX(loaded_at)
             FROM stg_products
+            WHERE datetime(loaded_at) <= datetime(
+                'now',
+                '+' || __WATERMARK_FUTURE_TOLERANCE_MINUTES__ || ' minutes'
+            )
         ),
         last_loaded_at
     ),
@@ -422,6 +463,10 @@ SET
         (
             SELECT MAX(loaded_at)
             FROM stg_orders
+            WHERE datetime(loaded_at) <= datetime(
+                'now',
+                '+' || __WATERMARK_FUTURE_TOLERANCE_MINUTES__ || ' minutes'
+            )
         ),
         last_loaded_at
     ),
@@ -434,6 +479,10 @@ SET
         (
             SELECT MAX(loaded_at)
             FROM stg_order_items
+            WHERE datetime(loaded_at) <= datetime(
+                'now',
+                '+' || __WATERMARK_FUTURE_TOLERANCE_MINUTES__ || ' minutes'
+            )
         ),
         last_loaded_at
     ),
@@ -446,6 +495,10 @@ SET
         (
             SELECT MAX(loaded_at)
             FROM stg_payments
+            WHERE datetime(loaded_at) <= datetime(
+                'now',
+                '+' || __WATERMARK_FUTURE_TOLERANCE_MINUTES__ || ' minutes'
+            )
         ),
         last_loaded_at
     ),

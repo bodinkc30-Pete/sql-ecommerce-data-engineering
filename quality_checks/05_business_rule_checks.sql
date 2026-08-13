@@ -49,13 +49,7 @@ SELECT
     order_status,
     'order_status is not an allowed value'
 FROM orders
-WHERE order_status NOT IN (
-    'PENDING',
-    'PROCESSING',
-    'COMPLETED',
-    'CANCELLED',
-    'REFUNDED'
-)
+WHERE order_status NOT IN (__ALLOWED_ORDER_STATUSES__)
 
 UNION ALL
 
@@ -154,13 +148,7 @@ SELECT
     payment_method,
     'payment_method is not an allowed value'
 FROM payments
-WHERE payment_method NOT IN (
-    'CREDIT_CARD',
-    'DEBIT_CARD',
-    'BANK_TRANSFER',
-    'E_WALLET',
-    'CASH'
-)
+WHERE payment_method NOT IN (__ALLOWED_PAYMENT_METHODS__)
 
 UNION ALL
 
@@ -171,13 +159,7 @@ SELECT
     payment_status,
     'payment_status is not an allowed value'
 FROM payments
-WHERE payment_status NOT IN (
-    'PENDING',
-    'PAID',
-    'FAILED',
-    'REFUNDED',
-    'CANCELLED'
-)
+WHERE payment_status NOT IN (__ALLOWED_PAYMENT_STATUSES__)
 
 UNION ALL
 
