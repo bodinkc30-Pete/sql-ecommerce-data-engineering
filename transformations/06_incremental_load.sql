@@ -313,6 +313,59 @@ ON CONFLICT(order_item_id) DO UPDATE SET
     line_total = excluded.line_total,
     updated_at = CURRENT_TIMESTAMP;
 
+-- Quarantine invalid payment_amount records before valid rows are loaded.
+-- Staging intentionally stores raw source values as TEXT. Invalid values
+-- remain available for RCA/replay instead of disappearing silently.
+INSERT INTO rejected_source_records (
+    run_id,
+    dataset_name,
+    source_file,
+    source_row_number,
+    raw_record_json,
+    rejected_column,
+    rejected_value,
+    rejection_reason,
+    rejection_type,
+    rejected_at
+)
+SELECT
+    NULL,
+    'payments',
+    source_file,
+    ROW_NUMBER() OVER (
+        PARTITION BY source_file
+        ORDER BY rowid
+    ) + 1,
+    json_object(
+        'payment_id', payment_id,
+        'order_id', order_id,
+        'payment_date', payment_date,
+        'payment_method', payment_method,
+        'payment_amount', payment_amount,
+        'payment_status', payment_status
+    ),
+    'payment_amount',
+    payment_amount,
+    'payment_amount must be a non-negative numeric value',
+    'INVALID_DATA_TYPE',
+    CURRENT_TIMESTAMP
+FROM stg_payments
+WHERE
+    datetime(loaded_at) >= datetime(
+        (
+            SELECT last_loaded_at
+            FROM pipeline_watermark
+            WHERE table_name = 'stg_payments'
+        ),
+        '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
+    )
+    AND (
+        payment_amount IS NULL
+        OR TRIM(payment_amount) = ''
+        OR TRIM(payment_amount) GLOB '*[^0-9.]*'
+        OR CAST(TRIM(payment_amount) AS REAL) < 0
+    );
+
 WITH incremental_payments AS (
     SELECT
         CAST(TRIM(payment_id) AS INTEGER) AS payment_id,

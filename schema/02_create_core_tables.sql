@@ -211,7 +211,7 @@ CREATE TABLE IF NOT EXISTS pipeline_sla_metrics (
     sla_threshold_seconds REAL NOT NULL
         CHECK (sla_threshold_seconds > 0),
 
-    sla_status TEXT NOT NULL
+    sla_status TEXT NOT NULL DEFAULT 'NOT_EVALUATED'
         CHECK (
             sla_status IN (
                 'ON_TIME',
@@ -305,3 +305,34 @@ CREATE TABLE rejected_influencer_records (
     source_row_number INTEGER NOT NULL,
     rejected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+
+CREATE TABLE IF NOT EXISTS rejected_source_records (
+    rejection_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    run_id TEXT,
+    dataset_name TEXT NOT NULL,
+    source_file TEXT NOT NULL,
+    source_row_number INTEGER NOT NULL,
+
+    raw_record_json TEXT NOT NULL,
+
+    rejected_column TEXT,
+    rejected_value TEXT,
+    rejection_reason TEXT NOT NULL,
+    rejection_type TEXT NOT NULL,
+
+    rejected_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_source_records_run_id
+ON rejected_source_records(run_id);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_source_records_dataset
+ON rejected_source_records(dataset_name);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_source_records_source_file
+ON rejected_source_records(source_file);
+
+CREATE INDEX IF NOT EXISTS idx_rejected_source_records_rejected_at
+ON rejected_source_records(rejected_at);
