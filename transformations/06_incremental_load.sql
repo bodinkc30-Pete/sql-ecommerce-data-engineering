@@ -162,6 +162,89 @@ ON CONFLICT(product_id) DO UPDATE SET
     stock_quantity = excluded.stock_quantity,
     updated_at = CURRENT_TIMESTAMP;
 
+-- Quarantine syntactically valid orders whose customer parent is missing.
+-- The Core insert below already prevents an orphan via EXISTS; this block
+-- preserves durable RCA/replay evidence instead of silently dropping it.
+INSERT INTO rejected_source_records (
+    run_id,
+    dataset_name,
+    source_file,
+    source_row_number,
+    raw_record_json,
+    rejected_column,
+    rejected_value,
+    rejection_reason,
+    rejection_type,
+    rejected_at
+)
+SELECT
+    NULL,
+    'orders',
+    so.source_file,
+    ROW_NUMBER() OVER (
+        PARTITION BY so.source_file
+        ORDER BY so.rowid
+    ) + 1,
+    json_object(
+        'order_id', so.order_id,
+        'customer_id', so.customer_id,
+        'order_date', so.order_date,
+        'order_status', so.order_status
+    ),
+    'customer_id',
+    so.customer_id,
+    'customer_id does not reference an existing customer',
+    'REFERENTIAL_INTEGRITY_FAILURE',
+    CURRENT_TIMESTAMP
+FROM stg_orders AS so
+WHERE
+    datetime(so.loaded_at) >= datetime(
+        (
+            SELECT last_loaded_at
+            FROM pipeline_watermark
+            WHERE table_name = 'stg_orders'
+        ),
+        '-' || __INCREMENTAL_LOOKBACK_MINUTES__ || ' minutes'
+    )
+    AND so.order_id IS NOT NULL
+    AND TRIM(so.order_id) <> ''
+    AND TRIM(so.order_id) NOT GLOB '*[^0-9]*'
+    AND so.customer_id IS NOT NULL
+    AND TRIM(so.customer_id) <> ''
+    AND TRIM(so.customer_id) NOT GLOB '*[^0-9]*'
+    AND so.order_date IS NOT NULL
+    AND DATE(TRIM(so.order_date)) IS NOT NULL
+    AND so.order_status IS NOT NULL
+    AND UPPER(TRIM(so.order_status)) IN (
+        'PENDING',
+        'PROCESSING',
+        'COMPLETED',
+        'CANCELLED',
+        'REFUNDED'
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM customers AS c
+        WHERE c.customer_id = CAST(TRIM(so.customer_id) AS INTEGER)
+    )
+    AND NOT EXISTS (
+        SELECT 1
+        FROM rejected_source_records AS rsr
+        WHERE
+            rsr.dataset_name = 'orders'
+            AND rsr.source_file = so.source_file
+            AND rsr.source_row_number = (
+                SELECT COUNT(*) + 1
+                FROM stg_orders AS prior
+                WHERE
+                    prior.source_file = so.source_file
+                    AND prior.rowid <= so.rowid
+            )
+            AND rsr.rejected_column = 'customer_id'
+            AND rsr.rejected_value = so.customer_id
+            AND rsr.rejection_type = 'REFERENTIAL_INTEGRITY_FAILURE'
+    );
+
 WITH incremental_orders AS (
     SELECT
         CAST(TRIM(order_id) AS INTEGER) AS order_id,
