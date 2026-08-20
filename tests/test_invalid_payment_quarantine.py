@@ -17,22 +17,53 @@ def extract_payment_quarantine_sql() -> str:
         encoding="utf-8",
     )
 
-    start_marker = "INSERT INTO rejected_source_records"
-    end_marker = "WITH incremental_payments AS"
+    payment_quarantine_statements = []
 
-    start_index = sql_text.index(start_marker)
-    end_index = sql_text.index(
-        end_marker,
-        start_index,
-    )
+    for raw_statement in sql_text.split(";"):
+        statement = raw_statement.strip()
 
-    quarantine_sql = sql_text[
-        start_index:end_index
-    ].strip()
+        if not statement:
+            continue
 
-    quarantine_sql = quarantine_sql.replace(
-        "__INCREMENTAL_LOOKBACK_MINUTES__",
-        "10",
+        normalized_statement = (
+            " ".join(
+                statement.lower().split()
+            )
+        )
+
+        is_payment_quarantine = all(
+            marker in normalized_statement
+            for marker in (
+                "insert into rejected_source_records",
+                "stg_payments",
+                "payment_amount",
+                "invalid_data_type",
+            )
+        )
+
+        if is_payment_quarantine:
+            payment_quarantine_statements.append(
+                statement + ";"
+            )
+
+    if len(payment_quarantine_statements) != 1:
+        raise AssertionError(
+            "Expected exactly one payment quarantine "
+            "statement in 06_incremental_load.sql, "
+            "found "
+            f"{len(payment_quarantine_statements)}"
+        )
+
+    quarantine_sql = (
+        payment_quarantine_statements[0]
+        .replace(
+            "__INCREMENTAL_LOOKBACK_MINUTES__",
+            "10",
+        )
+        .replace(
+            "__WATERMARK_FUTURE_TOLERANCE_MINUTES__",
+            "5",
+        )
     )
 
     return quarantine_sql
@@ -92,6 +123,34 @@ def create_test_database() -> sqlite3.Connection:
 
 
 class InvalidPaymentQuarantineTestCase(unittest.TestCase):
+
+    def test_extraction_is_scoped_to_payment_quarantine(
+        self,
+    ) -> None:
+        quarantine_sql = (
+            extract_payment_quarantine_sql()
+        )
+
+        normalized_sql = (
+            quarantine_sql.lower()
+        )
+
+        self.assertIn(
+            "stg_payments",
+            normalized_sql,
+        )
+        self.assertIn(
+            "payment_amount",
+            normalized_sql,
+        )
+        self.assertIn(
+            "invalid_data_type",
+            normalized_sql,
+        )
+        self.assertNotIn(
+            "stg_orders",
+            normalized_sql,
+        )
 
     def test_invalid_payment_amount_is_quarantined(
         self,

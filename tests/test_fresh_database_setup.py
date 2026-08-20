@@ -87,9 +87,9 @@ class FreshDatabaseSetupTestCase(unittest.TestCase):
             """
         ).fetchone()[0]
 
-        self.assertEqual(22, table_count)
+        self.assertEqual(23, table_count)
         self.assertEqual(19, view_count)
-        self.assertEqual(49, index_count)
+        self.assertEqual(53, index_count)
 
     def test_fresh_governance_metadata_is_seeded(self) -> None:
         asset_count = self.connection.execute(
