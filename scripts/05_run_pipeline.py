@@ -1,4 +1,5 @@
 import argparse
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 import json
@@ -19,6 +20,17 @@ DATABASE_PATH = PROJECT_ROOT / "database" / "ecommerce_data_engineering.db"
 PIPELINE_NAME = "hybrid_ecommerce_data_pipeline"
 LOG_DIRECTORY = PROJECT_ROOT / "logs"
 PIPELINE_LOG_PATH = LOG_DIRECTORY / "pipeline.log"
+
+DATABASE_RETRY_MAX_ATTEMPTS = 2
+DATABASE_RETRY_DELAY_SECONDS = 2.0
+RETRYABLE_ERROR_PATTERNS = (
+    "database is locked",
+    "database is busy",
+    "temporarily unavailable",
+    "temporary failure",
+    "timed out",
+    "timeout",
+)
 
 
 PIPELINE_STEPS = [
@@ -160,6 +172,69 @@ def print_separator() -> None:
 def validate_script_exists(script_path: Path) -> None:
     if not script_path.exists():
         raise FileNotFoundError(f"ไม่พบ Script: {script_path}")
+
+
+def is_retryable_error(error: Exception) -> bool:
+    error_text = str(error).lower()
+    return any(
+        pattern in error_text
+        for pattern in RETRYABLE_ERROR_PATTERNS
+    )
+
+
+def run_database_operation_with_retry(
+    operation_name: str,
+    operation: Callable[[], Any],
+    run_id: str,
+    max_attempts: int = DATABASE_RETRY_MAX_ATTEMPTS,
+    retry_delay_seconds: float = DATABASE_RETRY_DELAY_SECONDS,
+) -> Any:
+    if max_attempts < 1:
+        raise ValueError("max_attempts must be at least 1")
+
+    for attempt_number in range(1, max_attempts + 1):
+        try:
+            return operation()
+
+        except Exception as error:
+            if not is_retryable_error(error):
+                print(
+                    f"[DB NO RETRY] {operation_name} | "
+                    "error is not retryable"
+                )
+                raise
+
+            if attempt_number >= max_attempts:
+                print(
+                    f"[DB RETRY EXHAUSTED] {operation_name} | "
+                    f"attempts={max_attempts}"
+                )
+                write_log(
+                    f"DB RETRY EXHAUSTED | {operation_name} | "
+                    f"run_id={run_id} | attempts={max_attempts} | "
+                    f"error={error}"
+                )
+                raise
+
+            print(
+                f"[DB RETRY] {operation_name} | "
+                f"attempt {attempt_number} failed | "
+                f"retrying as attempt {attempt_number + 1} "
+                f"in {retry_delay_seconds:.0f} seconds"
+            )
+            write_log(
+                f"DB RETRY SCHEDULED | {operation_name} | "
+                f"run_id={run_id} | "
+                f"failed_attempt={attempt_number} | "
+                f"next_attempt={attempt_number + 1} | "
+                f"delay={retry_delay_seconds:.0f}s | "
+                f"error={error}"
+            )
+            time.sleep(retry_delay_seconds)
+
+    raise RuntimeError(
+        f"Unexpected retry loop exit: {operation_name}"
+    )
 
 
 def create_child_environment(
@@ -356,11 +431,6 @@ def get_runtime_lineage_types(
             "QUALITY",
         )
 
-    # SETUP_DATABASE creates/recreates views, but Core -> Mart lineage is
-    # represented as static dataset lineage in lineage_edges.
-    # RUN_QUALITY_CHECKS currently produces quality/audit results rather than
-    # a governed downstream dataset asset, so no runtime lineage edge is
-    # recorded for that step yet.
     return ()
 
 
@@ -441,8 +511,6 @@ def record_lineage_events_for_step(
             ) in lineage_edges:
                 edge_status = execution_status
 
-                # Demo mode deliberately does not ingest/process PawChoice.
-                # Record SKIPPED rather than incorrectly claiming SUCCESS.
                 if (
                     pipeline_mode == "demo"
                     and is_pawchoice_lineage_edge(
@@ -546,6 +614,7 @@ def finish_pipeline_audit(
         )
         connection.commit()
 
+
 def validate_recovery_source(recovery_of_run_id: str) -> None:
     with sqlite3.connect(DATABASE_PATH) as connection:
         recovery_source = connection.execute(
@@ -575,6 +644,8 @@ def validate_recovery_source(recovery_of_run_id: str) -> None:
             "Recovery source must be a FAILED pipeline run. "
             f"run_id={recovery_of_run_id} | status={recovery_source[0]}"
         )
+
+
 def stamp_pipeline_audit_metadata(
     run_id: str,
     run_type: str,
@@ -602,6 +673,7 @@ def stamp_pipeline_audit_metadata(
             ),
         )
         connection.commit()
+
 
 def insert_pipeline_audit_record(
     run_id: str,
@@ -980,25 +1052,13 @@ def run_script(
             )
 
             if "[FILE ERROR]" in child_error_text:
-                raise FileNotFoundError(
-                    child_error_text
-                )
+                raise FileNotFoundError(child_error_text)
 
-            if (
-                "[VALIDATION ERROR]"
-                in child_error_text
-            ):
-                raise ValueError(
-                    child_error_text
-                )
+            if "[VALIDATION ERROR]" in child_error_text:
+                raise ValueError(child_error_text)
 
-            if (
-                "[QUALITY ERROR]"
-                in child_error_text
-            ):
-                raise ValueError(
-                    child_error_text
-                )
+            if "[QUALITY ERROR]" in child_error_text:
+                raise ValueError(child_error_text)
 
             raise RuntimeError(child_error_text)
 
@@ -1171,6 +1231,7 @@ def run_script(
 
     return elapsed_seconds
 
+
 def validate_backfill_dates(
     backfill_start_date: str | None,
     backfill_end_date: str | None,
@@ -1204,12 +1265,12 @@ def validate_backfill_dates(
             "Backfill start date must be on or before backfill end date."
         )
 
+
 def run_pipeline(
     recovery_of_run_id: str | None = None,
     backfill_start_date: str | None = None,
     backfill_end_date: str | None = None,
 ) -> None:
-    
     ensure_required_directories()
     config = read_pipeline_config()
     pipeline_mode = get_pipeline_mode(config)
@@ -1224,7 +1285,11 @@ def run_pipeline(
     )
 
     try:
-        bootstrap_monitoring_schema()
+        run_database_operation_with_retry(
+            operation_name="BOOTSTRAP_MONITORING_SCHEMA",
+            operation=bootstrap_monitoring_schema,
+            run_id=pipeline_run_id,
+        )
     except sqlite3.Error as error:
         print_separator()
         print("[DATABASE ERROR] ไม่สามารถเข้าถึง Monitoring Database")
@@ -1247,7 +1312,13 @@ def run_pipeline(
         run_type = "NORMAL"
 
     if recovery_of_run_id:
-        validate_recovery_source(recovery_of_run_id)
+        run_database_operation_with_retry(
+            operation_name="VALIDATE_RECOVERY_SOURCE",
+            operation=lambda: validate_recovery_source(
+                recovery_of_run_id
+            ),
+            run_id=pipeline_run_id,
+        )
 
         print(
             f"[INFO] Recovery mode: recovering from "
@@ -1261,17 +1332,26 @@ def run_pipeline(
         )
 
     pipeline_start_time = current_utc_time()
-    pipeline_audit_id = start_pipeline_audit(
-        pipeline_run_id,
-        pipeline_start_time,
+
+    pipeline_audit_id = run_database_operation_with_retry(
+        operation_name="START_PIPELINE_AUDIT",
+        operation=lambda: start_pipeline_audit(
+            pipeline_run_id,
+            pipeline_start_time,
+        ),
+        run_id=pipeline_run_id,
     )
 
-    stamp_pipeline_audit_metadata(
+    run_database_operation_with_retry(
+        operation_name="STAMP_PIPELINE_AUDIT_METADATA",
+        operation=lambda: stamp_pipeline_audit_metadata(
+            run_id=pipeline_run_id,
+            run_type=run_type,
+            recovery_of_run_id=recovery_of_run_id,
+            backfill_start_date=backfill_start_date,
+            backfill_end_date=backfill_end_date,
+        ),
         run_id=pipeline_run_id,
-        run_type=run_type,
-        recovery_of_run_id=recovery_of_run_id,
-        backfill_start_date=backfill_start_date,
-        backfill_end_date=backfill_end_date,
     )
 
     print_separator()
@@ -1293,25 +1373,16 @@ def run_pipeline(
     step_durations: dict[str, float] = {}
 
     try:
-        max_attempts = 2
-        retry_delay_seconds = 2.0
-
-        retryable_error_patterns = (
-            "database is locked",
-            "database is busy",
-            "temporarily unavailable",
-            "temporary failure",
-            "timed out",
-            "timeout",
-        )
-
         for pipeline_step in PIPELINE_STEPS:
             step_name = pipeline_step["step_name"]
             sla_threshold_seconds = (
                 step_sla_seconds.get(step_name) if sla_enabled else None
             )
 
-            for attempt_number in range(1, max_attempts + 1):
+            for attempt_number in range(
+                1,
+                DATABASE_RETRY_MAX_ATTEMPTS + 1,
+            ):
                 try:
                     elapsed_seconds = run_script(
                         step_number=pipeline_step["step_number"],
@@ -1333,24 +1404,17 @@ def run_pipeline(
                     break
 
                 except Exception as error:
-                    error_text = str(error).lower()
-
-                    is_retryable = any(
-                        pattern in error_text
-                        for pattern in retryable_error_patterns
-                    )
-
-                    if not is_retryable:
+                    if not is_retryable_error(error):
                         print(
                             f"[NO RETRY] {step_name} | "
-                            f"error is not retryable"
+                            "error is not retryable"
                         )
                         raise
 
-                    if attempt_number >= max_attempts:
+                    if attempt_number >= DATABASE_RETRY_MAX_ATTEMPTS:
                         print(
                             f"[RETRY EXHAUSTED] {step_name} | "
-                            f"attempts={max_attempts}"
+                            f"attempts={DATABASE_RETRY_MAX_ATTEMPTS}"
                         )
                         raise
 
@@ -1358,7 +1422,7 @@ def run_pipeline(
                         f"[RETRY] {step_name} | "
                         f"attempt {attempt_number} failed | "
                         f"retrying as attempt {attempt_number + 1} "
-                        f"in {retry_delay_seconds:.0f} seconds"
+                        f"in {DATABASE_RETRY_DELAY_SECONDS:.0f} seconds"
                     )
 
                     write_log(
@@ -1366,14 +1430,16 @@ def run_pipeline(
                         f"run_id={pipeline_run_id} | "
                         f"failed_attempt={attempt_number} | "
                         f"next_attempt={attempt_number + 1} | "
-                        f"delay={retry_delay_seconds:.0f}s"
+                        f"delay={DATABASE_RETRY_DELAY_SECONDS:.0f}s"
                     )
 
-                    time.sleep(retry_delay_seconds)
+                    time.sleep(DATABASE_RETRY_DELAY_SECONDS)
 
     except Exception as error:
         pipeline_completed_at = current_utc_time()
-        total_elapsed_seconds = time.perf_counter() - pipeline_started_at_counter
+        total_elapsed_seconds = (
+            time.perf_counter() - pipeline_started_at_counter
+        )
 
         finish_pipeline_audit(
             pipeline_audit_id,
@@ -1393,16 +1459,22 @@ def run_pipeline(
         print_separator()
         print("[FAILED] PIPELINE หยุดทำงานเนื่องจาก Step ล้มเหลว")
         print(f"[INFO] run_id: {pipeline_run_id}")
-        print(f"[INFO] เวลาก่อนล้มเหลว: {total_elapsed_seconds:.2f} วินาที")
+        print(
+            f"[INFO] เวลาก่อนล้มเหลว: "
+            f"{total_elapsed_seconds:.2f} วินาที"
+        )
 
         write_log(
             "PIPELINE FAILED | "
             f"run_id={pipeline_run_id} | "
-            f"duration={total_elapsed_seconds:.2f} seconds | error={error}"
+            f"duration={total_elapsed_seconds:.2f} seconds | "
+            f"error={error}"
         )
         raise
 
-    total_elapsed_seconds = time.perf_counter() - pipeline_started_at_counter
+    total_elapsed_seconds = (
+        time.perf_counter() - pipeline_started_at_counter
+    )
     pipeline_completed_at = current_utc_time()
 
     finish_pipeline_audit(
