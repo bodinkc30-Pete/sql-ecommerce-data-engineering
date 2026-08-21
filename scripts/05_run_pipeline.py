@@ -616,7 +616,9 @@ def finish_pipeline_audit(
 
 
 def validate_recovery_source(recovery_of_run_id: str) -> None:
-    with sqlite3.connect(DATABASE_PATH) as connection:
+    connection = sqlite3.connect(DATABASE_PATH)
+
+    try:
         recovery_source = connection.execute(
             """
             SELECT run_status
@@ -633,6 +635,8 @@ def validate_recovery_source(recovery_of_run_id: str) -> None:
                 recovery_of_run_id,
             ),
         ).fetchone()
+    finally:
+        connection.close()
 
     if recovery_source is None:
         raise ValueError(
@@ -653,7 +657,9 @@ def stamp_pipeline_audit_metadata(
     backfill_start_date: str | None = None,
     backfill_end_date: str | None = None,
 ) -> None:
-    with sqlite3.connect(DATABASE_PATH) as connection:
+    connection = sqlite3.connect(DATABASE_PATH)
+
+    try:
         connection.execute(
             """
             UPDATE pipeline_audit
@@ -673,6 +679,8 @@ def stamp_pipeline_audit_metadata(
             ),
         )
         connection.commit()
+    finally:
+        connection.close()
 
 
 def insert_pipeline_audit_record(
