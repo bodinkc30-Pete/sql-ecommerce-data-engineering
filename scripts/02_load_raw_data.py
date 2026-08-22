@@ -480,6 +480,44 @@ def validate_csv_columns(
             f"ขาดคอลัมน์: {missing_column_list}"
         )
 
+    duplicate_columns = []
+    seen_columns = set()
+
+    for column in actual_columns:
+        if column in seen_columns:
+            if column not in duplicate_columns:
+                duplicate_columns.append(column)
+            continue
+
+        seen_columns.add(column)
+
+    if duplicate_columns:
+        duplicate_column_list = ", ".join(
+            duplicate_columns
+        )
+
+        raise ValueError(
+            f"ไฟล์ {file_path.name} "
+            f"มีคอลัมน์ซ้ำ: {duplicate_column_list}"
+        )
+
+    unexpected_columns = [
+        column
+        for column in actual_columns
+        if column not in expected_columns
+    ]
+
+    if unexpected_columns:
+        unexpected_column_list = ", ".join(
+            unexpected_columns
+        )
+
+        raise ValueError(
+            f"ไฟล์ {file_path.name} "
+            f"มีคอลัมน์ที่ไม่ได้อยู่ใน Data Contract: "
+            f"{unexpected_column_list}"
+        )
+
 
 def read_csv_rows(
     file_path: Path,
