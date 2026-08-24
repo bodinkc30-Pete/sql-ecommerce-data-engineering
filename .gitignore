@@ -71,6 +71,13 @@ logs/docker/
 
 
 # ============================================================
+# Airflow runtime artifacts
+# ============================================================
+
+airflow/logs/
+
+
+# ============================================================
 # Pawchoice private source data
 # Do not upload real Excel, PDF, names, phone numbers,
 # bank accounts, or other personal information to GitHub.
