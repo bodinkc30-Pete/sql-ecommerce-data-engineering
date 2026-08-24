@@ -8,6 +8,7 @@ DROP VIEW IF EXISTS vw_data_quality_summary;
 DROP VIEW IF EXISTS vw_pipeline_run_summary;
 DROP VIEW IF EXISTS vw_pipeline_step_monitoring;
 DROP VIEW IF EXISTS vw_pipeline_sla_monitoring;
+DROP VIEW IF EXISTS vw_pipeline_alert_monitoring;
 
 DROP VIEW IF EXISTS vw_influencer_payment_details;
 DROP VIEW IF EXISTS vw_campaign_payment_summary;
@@ -436,6 +437,84 @@ SELECT
     measured_at,
     created_at
 FROM pipeline_sla_metrics;
+
+
+CREATE VIEW vw_pipeline_alert_monitoring AS
+SELECT
+    a.alert_id,
+    a.alert_key,
+    a.alert_fingerprint,
+    a.source_type,
+    a.alert_type,
+    a.severity,
+
+    CASE a.severity
+        WHEN 'CRITICAL' THEN 1
+        WHEN 'ERROR' THEN 2
+        WHEN 'WARNING' THEN 3
+        ELSE 99
+    END AS severity_priority,
+
+    a.status,
+
+    CASE a.status
+        WHEN 'OPEN' THEN 1
+        WHEN 'ACKNOWLEDGED' THEN 2
+        WHEN 'RESOLVED' THEN 3
+        ELSE 99
+    END AS status_priority,
+
+    CASE
+        WHEN a.status IN (
+            'OPEN',
+            'ACKNOWLEDGED'
+        )
+            THEN 1
+        ELSE 0
+    END AS is_active,
+
+    a.pipeline_name,
+    a.run_id AS alert_run_id,
+    a.step_name,
+    a.attempt_number AS alert_attempt_number,
+
+    a.title,
+    a.message,
+
+    a.first_detected_at,
+    a.last_detected_at,
+    a.occurrence_count,
+
+    a.acknowledged_at,
+    a.resolved_at,
+
+    a.created_at,
+    a.updated_at,
+
+    o.occurrence_id AS latest_occurrence_id,
+    o.run_id AS latest_occurrence_run_id,
+    o.attempt_number
+        AS latest_occurrence_attempt_number,
+    o.detected_at
+        AS latest_occurrence_detected_at,
+    o.error_type
+        AS latest_error_type,
+    o.raw_error_message
+        AS latest_raw_error_message,
+    o.normalized_error_signature
+        AS latest_normalized_error_signature
+
+FROM pipeline_alerts AS a
+LEFT JOIN pipeline_alert_occurrences AS o
+    ON o.occurrence_id = (
+        SELECT o2.occurrence_id
+        FROM pipeline_alert_occurrences AS o2
+        WHERE o2.alert_id = a.alert_id
+        ORDER BY
+            o2.detected_at DESC,
+            o2.occurrence_id DESC
+        LIMIT 1
+    );
 
 
 CREATE VIEW vw_influencer_payment_details AS

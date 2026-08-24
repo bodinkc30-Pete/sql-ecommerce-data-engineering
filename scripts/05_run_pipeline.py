@@ -1,9 +1,11 @@
 import argparse
+import hashlib
 from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -300,19 +302,26 @@ def monitoring_schema_available() -> bool:
     if not DATABASE_PATH.exists():
         return False
 
+    connection: sqlite3.Connection | None = None
+
     try:
-        with sqlite3.connect(DATABASE_PATH) as connection:
-            required_tables = {
-                "pipeline_audit",
-                "pipeline_step_log",
-                "pipeline_sla_metrics",
-            }
-            return all(
-                table_exists(connection, table_name)
-                for table_name in required_tables
-            )
+        connection = sqlite3.connect(DATABASE_PATH)
+        required_tables = {
+            "pipeline_audit",
+            "pipeline_step_log",
+            "pipeline_sla_metrics",
+            "pipeline_alerts",
+            "pipeline_alert_occurrences",
+        }
+        return all(
+            table_exists(connection, table_name)
+            for table_name in required_tables
+        )
     except sqlite3.Error:
         raise
+    finally:
+        if connection is not None:
+            connection.close()
 
 
 def bootstrap_monitoring_schema() -> None:
@@ -890,6 +899,345 @@ def determine_sla_status(
     return "BREACHED" if duration_seconds > sla_threshold_seconds else "ON_TIME"
 
 
+def normalize_alert_error_signature(
+    error_type: str | None,
+    error_message: str | None,
+) -> str:
+    normalized_type = (error_type or "none").strip().lower()
+    normalized_message = (error_message or "no error").strip().lower()
+
+    if "database is locked" in normalized_message:
+        normalized_message = "database is locked"
+    else:
+        normalized_message = re.sub(
+            r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+            "<uuid>",
+            normalized_message,
+            flags=re.IGNORECASE,
+        )
+        normalized_message = re.sub(
+            r"\b\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:?\d{2})?\b",
+            "<timestamp>",
+            normalized_message,
+            flags=re.IGNORECASE,
+        )
+        normalized_message = re.sub(
+            r"\bafter\s+\d+(?:\.\d+)?\s*(?:sec|secs|second|seconds)\b",
+            "after <duration>",
+            normalized_message,
+            flags=re.IGNORECASE,
+        )
+        normalized_message = re.sub(r"\s+", " ", normalized_message).strip()
+
+    return f"{normalized_type}::{normalized_message}"
+
+
+def build_alert_fingerprint(
+    pipeline_name: str,
+    step_name: str,
+    alert_type: str,
+    error_type: str | None,
+    error_message: str | None,
+) -> str:
+    normalized_signature = normalize_alert_error_signature(
+        error_type=error_type,
+        error_message=error_message,
+    )
+    fingerprint_source = "::".join(
+        (
+            pipeline_name.strip().lower(),
+            step_name.strip().upper(),
+            alert_type.strip().upper(),
+            normalized_signature,
+        )
+    )
+    return hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
+
+
+def build_alert_key(
+    pipeline_name: str,
+    run_id: str,
+    step_name: str,
+    attempt_number: int,
+    alert_type: str,
+) -> str:
+    return "::".join(
+        (
+            pipeline_name,
+            run_id,
+            step_name,
+            str(attempt_number),
+            alert_type,
+        )
+    )
+
+
+def record_step_alert(
+    pipeline_name: str,
+    run_id: str,
+    step_name: str,
+    attempt_number: int,
+    step_status: str,
+    sla_status: str,
+    error_type: str | None,
+    error_message: str | None,
+    detected_at: str,
+) -> None:
+    if step_status == "FAILED":
+        alert_type = "STEP_FAILURE"
+        severity = "CRITICAL"
+        title = f"Pipeline step failed: {step_name}"
+
+        error_detail = error_message or "No error message was provided."
+        type_detail = error_type or "UnknownError"
+
+        message = (
+            f"Step {step_name} failed with {type_detail}: "
+            f"{error_detail} | SLA status={sla_status}"
+        )
+
+    elif step_status == "SUCCESS" and sla_status == "BREACHED":
+        alert_type = "SLA_BREACH"
+        severity = "WARNING"
+        title = f"Pipeline SLA breached: {step_name}"
+        message = (
+            f"Step {step_name} completed successfully but "
+            "its SLA status is BREACHED."
+        )
+
+    else:
+        return
+
+    normalized_error_signature = normalize_alert_error_signature(
+        error_type=error_type,
+        error_message=error_message,
+    )
+    alert_fingerprint = build_alert_fingerprint(
+        pipeline_name=pipeline_name,
+        step_name=step_name,
+        alert_type=alert_type,
+        error_type=error_type,
+        error_message=error_message,
+    )
+
+    connection: sqlite3.Connection | None = None
+
+    try:
+        connection = sqlite3.connect(DATABASE_PATH)
+        connection.execute("PRAGMA foreign_keys = ON;")
+
+        alert_columns = {
+            row[1]
+            for row in connection.execute(
+                "PRAGMA table_info(pipeline_alerts);"
+            ).fetchall()
+        }
+        occurrence_table_exists = connection.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = 'pipeline_alert_occurrences';
+            """
+        ).fetchone() is not None
+
+        modern_alert_schema = (
+            "alert_fingerprint" in alert_columns
+            and occurrence_table_exists
+        )
+
+        if modern_alert_schema:
+            connection.execute("BEGIN IMMEDIATE;")
+
+            existing_alert = connection.execute(
+                """
+                SELECT alert_id
+                FROM pipeline_alerts
+                WHERE alert_fingerprint = ?;
+                """,
+                (alert_fingerprint,),
+            ).fetchone()
+
+            if existing_alert is None:
+                cursor = connection.execute(
+                    """
+                    INSERT INTO pipeline_alerts (
+                        alert_key,
+                        alert_fingerprint,
+                        source_type,
+                        alert_type,
+                        severity,
+                        status,
+                        pipeline_name,
+                        run_id,
+                        step_name,
+                        attempt_number,
+                        title,
+                        message,
+                        first_detected_at,
+                        last_detected_at,
+                        occurrence_count
+                    )
+                    VALUES (
+                        ?, ?, 'ORCHESTRATOR', ?, ?, 'OPEN',
+                        ?, ?, ?, ?, ?, ?, ?, ?, 1
+                    );
+                    """,
+                    (
+                        alert_fingerprint,
+                        alert_fingerprint,
+                        alert_type,
+                        severity,
+                        pipeline_name,
+                        run_id,
+                        step_name,
+                        attempt_number,
+                        title,
+                        message,
+                        detected_at,
+                        detected_at,
+                    ),
+                )
+                alert_id = int(cursor.lastrowid)
+            else:
+                alert_id = int(existing_alert[0])
+                connection.execute(
+                    """
+                    UPDATE pipeline_alerts
+                    SET
+                        run_id = ?,
+                        attempt_number = ?,
+                        title = ?,
+                        message = ?,
+                        last_detected_at = ?,
+                        occurrence_count = occurrence_count + 1,
+                        status = CASE
+                            WHEN status = 'RESOLVED'
+                                THEN 'OPEN'
+                            ELSE status
+                        END,
+                        acknowledged_at = CASE
+                            WHEN status = 'RESOLVED'
+                                THEN NULL
+                            ELSE acknowledged_at
+                        END,
+                        resolved_at = CASE
+                            WHEN status = 'RESOLVED'
+                                THEN NULL
+                            ELSE resolved_at
+                        END,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE alert_id = ?;
+                    """,
+                    (
+                        run_id,
+                        attempt_number,
+                        title,
+                        message,
+                        detected_at,
+                        alert_id,
+                    ),
+                )
+
+            connection.execute(
+                """
+                INSERT INTO pipeline_alert_occurrences (
+                    alert_id,
+                    run_id,
+                    attempt_number,
+                    detected_at,
+                    error_type,
+                    raw_error_message,
+                    normalized_error_signature
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    alert_id,
+                    run_id,
+                    attempt_number,
+                    detected_at,
+                    error_type,
+                    error_message,
+                    normalized_error_signature,
+                ),
+            )
+            connection.commit()
+            return
+
+        # Backward-compatible fallback for isolated/legacy schemas that
+        # predate stable fingerprints and occurrence history.
+        alert_key = build_alert_key(
+            pipeline_name=pipeline_name,
+            run_id=run_id,
+            step_name=step_name,
+            attempt_number=attempt_number,
+            alert_type=alert_type,
+        )
+
+        connection.execute(
+            """
+            INSERT INTO pipeline_alerts (
+                alert_key,
+                source_type,
+                alert_type,
+                severity,
+                status,
+                pipeline_name,
+                run_id,
+                step_name,
+                attempt_number,
+                title,
+                message,
+                first_detected_at,
+                last_detected_at,
+                occurrence_count
+            )
+            VALUES (
+                ?, 'ORCHESTRATOR', ?, ?, 'OPEN',
+                ?, ?, ?, ?, ?, ?, ?, ?, 1
+            )
+            ON CONFLICT (alert_key)
+            DO UPDATE SET
+                title = excluded.title,
+                message = excluded.message,
+                last_detected_at = excluded.last_detected_at,
+                occurrence_count = pipeline_alerts.occurrence_count + 1,
+                updated_at = CURRENT_TIMESTAMP;
+            """,
+            (
+                alert_key,
+                alert_type,
+                severity,
+                pipeline_name,
+                run_id,
+                step_name,
+                attempt_number,
+                title,
+                message,
+                detected_at,
+                detected_at,
+            ),
+        )
+        connection.commit()
+    except sqlite3.Error as error:
+        if connection is not None:
+            connection.rollback()
+
+        warning_message = (
+            f"[ALERT WRITE WARNING] {step_name} | "
+            f"{type(error).__name__}: {error}"
+        )
+        print(warning_message)
+
+        try:
+            write_log(warning_message)
+        except OSError:
+            pass
+    finally:
+        if connection is not None:
+            connection.close()
+
 def get_child_audit_totals(run_id: str, pipeline_name: str) -> dict[str, int]:
     empty_totals = {
         "rows_processed": 0,
@@ -1134,6 +1482,18 @@ def run_script(
             run_type=run_type,
         )
 
+        record_step_alert(
+            pipeline_name=PIPELINE_NAME,
+            run_id=run_id,
+            step_name=step_name,
+            attempt_number=attempt_number,
+            step_status="FAILED",
+            sla_status=sla_status,
+            error_type=error_type,
+            error_message=audit_error_message,
+            detected_at=completed_at_utc,
+        )
+
         print(f"[FAILED] {step_name}")
         print(f"[ERROR TYPE] {error_type}")
         print(f"[ERROR] {base_error_message}")
@@ -1205,6 +1565,18 @@ def run_script(
         execution_status="SUCCESS",
         pipeline_mode=pipeline_mode,
         run_type=run_type,
+    )
+
+    record_step_alert(
+        pipeline_name=PIPELINE_NAME,
+        run_id=run_id,
+        step_name=step_name,
+        attempt_number=attempt_number,
+        step_status="SUCCESS",
+        sla_status=sla_status,
+        error_type=None,
+        error_message=None,
+        detected_at=completed_at_utc,
     )
 
     print(f"[SUCCESS] {step_name} สำเร็จ ใช้เวลา {elapsed_seconds:.2f} วินาที")

@@ -232,6 +232,93 @@ CREATE TABLE IF NOT EXISTS pipeline_sla_metrics (
 );
 
 
+CREATE TABLE IF NOT EXISTS pipeline_alerts (
+    alert_id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+    alert_key TEXT NOT NULL UNIQUE,
+    alert_fingerprint TEXT UNIQUE,
+
+    source_type TEXT NOT NULL
+        CHECK (
+            source_type IN (
+                'ORCHESTRATOR',
+                'QUALITY_GATE'
+            )
+        ),
+
+    alert_type TEXT NOT NULL
+        CHECK (
+            alert_type IN (
+                'STEP_FAILURE',
+                'SLA_BREACH',
+                'DATA_QUALITY_WARNING',
+                'DATA_QUALITY_FAILURE'
+            )
+        ),
+
+    severity TEXT NOT NULL
+        CHECK (
+            severity IN (
+                'CRITICAL',
+                'ERROR',
+                'WARNING'
+            )
+        ),
+
+    status TEXT NOT NULL DEFAULT 'OPEN'
+        CHECK (
+            status IN (
+                'OPEN',
+                'ACKNOWLEDGED',
+                'RESOLVED'
+            )
+        ),
+
+    pipeline_name TEXT NOT NULL,
+    run_id TEXT NOT NULL,
+    step_name TEXT NOT NULL,
+
+    attempt_number INTEGER NOT NULL DEFAULT 1
+        CHECK (attempt_number > 0),
+
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+
+    first_detected_at TEXT NOT NULL,
+    last_detected_at TEXT NOT NULL,
+
+    occurrence_count INTEGER NOT NULL DEFAULT 1
+        CHECK (occurrence_count > 0),
+
+    acknowledged_at TEXT,
+    resolved_at TEXT,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+
+CREATE TABLE IF NOT EXISTS pipeline_alert_occurrences (
+    occurrence_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL,
+    run_id TEXT NOT NULL,
+
+    attempt_number INTEGER NOT NULL DEFAULT 1
+        CHECK (attempt_number > 0),
+
+    detected_at TEXT NOT NULL,
+    error_type TEXT,
+    raw_error_message TEXT,
+    normalized_error_signature TEXT,
+
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (alert_id)
+        REFERENCES pipeline_alerts(alert_id)
+        ON DELETE CASCADE
+);
+
+
 DROP TABLE IF EXISTS rejected_influencer_records;
 DROP TABLE IF EXISTS influencer_payments;
 DROP TABLE IF EXISTS influencers;

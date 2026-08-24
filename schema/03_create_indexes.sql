@@ -32,6 +32,11 @@ DROP INDEX IF EXISTS idx_pipeline_sla_metrics_step_name;
 DROP INDEX IF EXISTS idx_pipeline_sla_metrics_sla_status;
 DROP INDEX IF EXISTS idx_pipeline_sla_metrics_measured_at;
 
+DROP INDEX IF EXISTS idx_pipeline_alerts_status_severity_last_detected;
+DROP INDEX IF EXISTS idx_pipeline_alerts_source_type_alert_type_detected;
+DROP INDEX IF EXISTS idx_pipeline_alert_occurrences_run_id;
+DROP INDEX IF EXISTS idx_pipeline_alert_occurrences_alert_detected;
+
 
 -- customers.email is already protected by the table-level
 -- UNIQUE constraint, so no duplicate user-defined index is created here.
@@ -121,6 +126,30 @@ ON pipeline_sla_metrics(sla_status);
 
 CREATE INDEX idx_pipeline_sla_metrics_measured_at
 ON pipeline_sla_metrics(measured_at);
+
+
+CREATE INDEX idx_pipeline_alerts_status_severity_last_detected
+ON pipeline_alerts(
+    status,
+    severity,
+    last_detected_at
+);
+
+CREATE INDEX idx_pipeline_alerts_source_type_alert_type_detected
+ON pipeline_alerts(
+    source_type,
+    alert_type,
+    last_detected_at
+);
+
+CREATE INDEX idx_pipeline_alert_occurrences_run_id
+ON pipeline_alert_occurrences(run_id);
+
+CREATE INDEX idx_pipeline_alert_occurrences_alert_detected
+ON pipeline_alert_occurrences(
+    alert_id,
+    detected_at
+);
 
 
 DROP INDEX IF EXISTS idx_campaigns_campaign_name;

@@ -1,7 +1,9 @@
 from datetime import datetime, timezone
 from pathlib import Path
+import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import uuid
@@ -718,6 +720,303 @@ def insert_audit_record(
     connection.commit()
 
 
+
+def normalize_quality_alert_signature(
+    error_type: str | None,
+    message: str | None,
+) -> str:
+    normalized_type = (error_type or "none").strip().lower()
+    normalized_message = (message or "no error").strip().lower()
+
+    normalized_message = re.sub(
+        r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
+        "<uuid>",
+        normalized_message,
+        flags=re.IGNORECASE,
+    )
+    normalized_message = re.sub(
+        r"\b\d{4}-\d{2}-\d{2}[ t]\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:z|[+-]\d{2}:?\d{2})?\b",
+        "<timestamp>",
+        normalized_message,
+        flags=re.IGNORECASE,
+    )
+    normalized_message = re.sub(
+        r"\b\d+(?:\.\d+)?%",
+        "<percent>",
+        normalized_message,
+    )
+    normalized_message = re.sub(
+        r"\b\d+(?:\.\d+)?\b",
+        "<number>",
+        normalized_message,
+    )
+    normalized_message = re.sub(
+        r"\s+",
+        " ",
+        normalized_message,
+    ).strip()
+
+    return f"{normalized_type}::{normalized_message}"
+
+
+def build_quality_alert_fingerprint(
+    pipeline_name: str,
+    step_name: str,
+    alert_type: str,
+    severity: str,
+    error_type: str | None,
+    message: str | None,
+) -> str:
+    normalized_signature = normalize_quality_alert_signature(
+        error_type=error_type,
+        message=message,
+    )
+
+    fingerprint_source = "::".join(
+        (
+            pipeline_name.strip().lower(),
+            step_name.strip().upper(),
+            alert_type.strip().upper(),
+            severity.strip().upper(),
+            normalized_signature,
+        )
+    )
+
+    return hashlib.sha256(
+        fingerprint_source.encode("utf-8")
+    ).hexdigest()
+
+
+def record_quality_alert(
+    run_id: str,
+    step_name: str,
+    evaluation: dict,
+    detected_at: str,
+) -> None:
+    outcome = str(
+        evaluation.get("outcome", "")
+    ).strip().upper()
+
+    if outcome == "PASS":
+        return
+
+    if outcome == "WARN":
+        alert_type = "DATA_QUALITY_WARNING"
+        severity = "WARNING"
+        error_type = "DataQualityWarning"
+        title = f"Data quality warning: {step_name}"
+
+    elif outcome == "FAIL":
+        alert_type = "DATA_QUALITY_FAILURE"
+
+        if int(evaluation.get("critical_count", 0)) > 0:
+            severity = "CRITICAL"
+            error_type = "DataQualityCriticalFailure"
+        else:
+            severity = "ERROR"
+            error_type = "DataQualityFailure"
+
+        title = f"Data quality failure: {step_name}"
+
+    else:
+        return
+
+    critical_count = int(
+        evaluation.get("critical_count", 0)
+    )
+    error_count = int(
+        evaluation.get("error_count", 0)
+    )
+    warning_count = int(
+        evaluation.get("warning_count", 0)
+    )
+    error_rate_percent = float(
+        evaluation.get("error_rate_percent", 0.0)
+    )
+    reason = str(
+        evaluation.get(
+            "reason",
+            "No quality evaluation reason was provided.",
+        )
+    )
+
+    message = (
+        f"Quality check {step_name} outcome={outcome}; "
+        f"CRITICAL={critical_count}; "
+        f"ERROR={error_count}; "
+        f"WARNING={warning_count}; "
+        f"error_rate={error_rate_percent:.4f}%; "
+        f"{reason}"
+    )
+
+    signature_message = (
+        f"outcome={outcome}; "
+        f"has_critical={critical_count > 0}; "
+        f"has_error={error_count > 0}; "
+        f"has_warning={warning_count > 0}; "
+        f"reason={reason}"
+    )
+
+    normalized_error_signature = (
+        normalize_quality_alert_signature(
+            error_type=error_type,
+            message=signature_message,
+        )
+    )
+
+    alert_fingerprint = (
+        build_quality_alert_fingerprint(
+            pipeline_name=PIPELINE_NAME,
+            step_name=step_name,
+            alert_type=alert_type,
+            severity=severity,
+            error_type=error_type,
+            message=signature_message,
+        )
+    )
+
+    connection: sqlite3.Connection | None = None
+
+    try:
+        connection = sqlite3.connect(
+            DATABASE_PATH
+        )
+        connection.execute(
+            "PRAGMA foreign_keys = ON;"
+        )
+        connection.execute(
+            "BEGIN IMMEDIATE;"
+        )
+
+        existing_alert = connection.execute(
+            """
+            SELECT alert_id
+            FROM pipeline_alerts
+            WHERE alert_fingerprint = ?;
+            """,
+            (alert_fingerprint,),
+        ).fetchone()
+
+        if existing_alert is None:
+            cursor = connection.execute(
+                """
+                INSERT INTO pipeline_alerts (
+                    alert_key,
+                    alert_fingerprint,
+                    source_type,
+                    alert_type,
+                    severity,
+                    status,
+                    pipeline_name,
+                    run_id,
+                    step_name,
+                    attempt_number,
+                    title,
+                    message,
+                    first_detected_at,
+                    last_detected_at,
+                    occurrence_count
+                )
+                VALUES (
+                    ?, ?, 'QUALITY_GATE', ?, ?, 'OPEN',
+                    ?, ?, ?, 1, ?, ?, ?, ?, 1
+                );
+                """,
+                (
+                    alert_fingerprint,
+                    alert_fingerprint,
+                    alert_type,
+                    severity,
+                    PIPELINE_NAME,
+                    run_id,
+                    step_name,
+                    title,
+                    message,
+                    detected_at,
+                    detected_at,
+                ),
+            )
+            alert_id = int(cursor.lastrowid)
+
+        else:
+            alert_id = int(existing_alert[0])
+
+            connection.execute(
+                """
+                UPDATE pipeline_alerts
+                SET
+                    run_id = ?,
+                    attempt_number = 1,
+                    title = ?,
+                    message = ?,
+                    last_detected_at = ?,
+                    occurrence_count = occurrence_count + 1,
+                    status = CASE
+                        WHEN status = 'RESOLVED'
+                            THEN 'OPEN'
+                        ELSE status
+                    END,
+                    acknowledged_at = CASE
+                        WHEN status = 'RESOLVED'
+                            THEN NULL
+                        ELSE acknowledged_at
+                    END,
+                    resolved_at = CASE
+                        WHEN status = 'RESOLVED'
+                            THEN NULL
+                        ELSE resolved_at
+                    END,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE alert_id = ?;
+                """,
+                (
+                    run_id,
+                    title,
+                    message,
+                    detected_at,
+                    alert_id,
+                ),
+            )
+
+        connection.execute(
+            """
+            INSERT INTO pipeline_alert_occurrences (
+                alert_id,
+                run_id,
+                attempt_number,
+                detected_at,
+                error_type,
+                raw_error_message,
+                normalized_error_signature
+            )
+            VALUES (?, ?, 1, ?, ?, ?, ?);
+            """,
+            (
+                alert_id,
+                run_id,
+                detected_at,
+                error_type,
+                message,
+                normalized_error_signature,
+            ),
+        )
+
+        connection.commit()
+
+    except sqlite3.Error as error:
+        if connection is not None:
+            connection.rollback()
+
+        print(
+            "[QUALITY ALERT WRITE WARNING] "
+            f"{step_name} | "
+            f"{type(error).__name__}: {error}"
+        )
+
+    finally:
+        if connection is not None:
+            connection.close()
+
 def print_check_results(
     file_name: str,
     result_rows: list[sqlite3.Row],
@@ -841,6 +1140,13 @@ def run_quality_check(
             file_name=file_path.name,
             result_rows=result_rows,
             evaluation=evaluation,
+        )
+
+        record_quality_alert(
+            run_id=run_id,
+            step_name=step_name,
+            evaluation=evaluation,
+            detected_at=completed_at,
         )
 
         return evaluation
