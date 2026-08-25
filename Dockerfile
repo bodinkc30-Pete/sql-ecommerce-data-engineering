@@ -26,6 +26,10 @@ COPY --chown=appuser:appgroup transformations/ ./transformations/
 COPY --chown=appuser:appgroup quality_checks/ ./quality_checks/
 COPY --chown=appuser:appgroup queries/ ./queries/
 COPY --chown=appuser:appgroup scripts/ ./scripts/
+COPY --chown=appuser:appgroup api/ ./api/
+COPY --chown=appuser:appgroup Dockerfile.airflow ./Dockerfile.airflow
+COPY --chown=appuser:appgroup docker-compose.airflow.yml ./docker-compose.airflow.yml
+COPY --chown=appuser:appgroup airflow/dags/ ./airflow/dags/
 COPY --chown=appuser:appgroup tests/ ./tests/
 
 RUN mkdir -p \
