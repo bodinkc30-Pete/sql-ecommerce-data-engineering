@@ -2,173 +2,202 @@
 
 [![Data Pipeline CI](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml/badge.svg)](https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering/actions/workflows/ci.yml)
 
-A production-style data engineering portfolio project that demonstrates reliable ingestion, staging, transformation, incremental loading, data quality, recovery, monitoring, governance, lineage, performance tuning, automated testing, Docker execution, and CI validation.
+A production-style Data Engineering portfolio project built around a reproducible SQLite e-commerce pipeline, extended with reliability engineering, data quality, observability, incident response, Airflow orchestration, a read-only FastAPI serving layer, Docker, performance validation, and GitHub Actions CI.
 
 The repository supports two execution modes:
 
 - **Demo Mode** — fully reproducible from version-controlled synthetic e-commerce CSV files.
-- **Hybrid Mode** — extends the same pipeline with a private real-world Pawchoice influencer-payment workbook while keeping sensitive source data out of Git and Docker images.
+- **Hybrid Mode** — runs the same pipeline while additionally processing a private Pawchoice influencer-payment workbook that remains outside Git and Docker images.
 
-The public repository is intentionally safe to clone and run without private business data.
+The public repository is intentionally safe to clone, inspect, test, and run without access to private business data.
 
 ---
 
-## Project Highlights
+## Project at a Glance
 
 | Area | Current implementation |
 |---|---|
-| Database | SQLite |
-| Tables | **22** |
-| Views | **19** |
-| Explicit named indexes | **49** |
-| Automated tests | **71** |
+| Business datastore | **SQLite** |
+| Physical SQLite tables | **25** |
+| SQLite views | **20** |
+| Explicit named indexes | **57** |
+| Automated tests | **193** |
 | Demo-mode expected skips | **4** |
+| Data-quality SQL packs | **7** |
 | Governance assets | **32** |
 | Dataset lineage edges | **34** |
-| Data-quality SQL checks | **7** |
 | Portfolio-safe CSV outputs | **6** |
-| Docker | Python 3.12 slim, non-root runtime |
-| CI/CD | GitHub Actions + Docker validation |
-| Fresh-clone validation | Automated fresh-database reproducibility test |
+| Orchestration | Existing Python orchestrator + **Apache Airflow 3.3.0** wrapper |
+| Airflow executor | **LocalExecutor** |
+| Airflow metadata DB | **PostgreSQL 17** |
+| Serving layer | **FastAPI**, read-only SQLite access |
+| Monitoring | Audit, step telemetry, SLA metrics, alerts, occurrences |
+| Incident response | RCA SQL evidence pack + recovery contract + runbook |
+| Containerization | Python 3.12 slim app image + separate Airflow stack |
+| CI/CD | GitHub Actions host validation + Docker parity validation |
 
-Current verified Demo Mode test result:
+Current verified Demo Mode regression result:
 
 ```text
-Ran 71 tests
+Ran 193 tests
 OK (skipped=4)
 ```
 
-The four skipped tests require the private Pawchoice workbook and are expected in Demo Mode.
+The four expected skips are Pawchoice-data tests that require the private workbook and are intentionally skipped in public Demo Mode.
 
 ---
 
-## What This Project Demonstrates
+## What This Project Proves
 
-This project focuses on practical Data Engineering capabilities rather than only analytical SQL.
+This project is designed to demonstrate practical Data Engineering work beyond basic SQL or one-off ETL.
 
-It demonstrates:
+It includes:
 
-- Multi-source ingestion from CSV and Excel
-- Staging-to-core data architecture
-- Relational modeling and referential integrity
-- SQL-based transformations
-- Incremental loading with watermark state
-- Lookback handling for late-arriving records
-- Idempotent reprocessing
-- Retry, recovery, and backfill-oriented execution design
-- Data freshness validation
-- Data quality thresholds and severity policies
-- Reconciliation checks
-- Rejected-record / dead-letter handling
-- Pipeline auditing and step-level monitoring
-- SLA monitoring
-- PII hashing, masking, and sanitization
-- Data asset registry
-- Dataset-level lineage
-- Runtime lineage event history
-- Recursive upstream/downstream dependency tracing
-- Query-plan inspection with `EXPLAIN QUERY PLAN`
-- Composite-index optimization
-- Repeatable performance benchmarking
-- Automated unit and acceptance tests
-- Fresh-database reproducibility validation
-- Dockerized execution
-- GitHub Actions CI
-- Portfolio-safe exports
+- Multi-source CSV / Excel ingestion
+- Staging-to-core relational architecture
+- Structural data contracts and schema-drift detection
+- SQL transformations and UPSERT patterns
+- Incremental loading with watermarks and lookback
+- Idempotent duplicate-delivery handling
+- Referential-integrity quarantine
+- Invalid-payment quarantine
+- Data quality, reconciliation, and freshness gates
+- Failure injection and regression tests
+- SQLite lock retry for transient operational failures
+- Pipeline run / step / SLA telemetry
+- Stable alert fingerprinting and deduplication
+- Alert occurrence history and reopen semantics
+- Alert lifecycle management
+- Recovery metadata linked to the failed run
+- Incident RCA queries and an incident runbook
+- Dataset-level and runtime lineage
+- Data asset registry and PII classification
+- Query-plan validation and performance regression tests
+- Business-serving views with aggregation-grain tests
+- Read-only REST API endpoints
+- Airflow orchestration without duplicating pipeline logic
+- Docker execution and CI parity validation
+- Portfolio-safe public outputs
 
 ---
 
-## Architecture
+# Architecture
 
-```mermaid
-flowchart LR
-
-    subgraph Sources
-        S1[Synthetic CSV Files]
-        S2[Private Pawchoice Excel<br/>Hybrid Mode only]
-    end
-
-    subgraph Ingestion
-        O[Pipeline Orchestrator]
-        STG[Staging Tables]
-    end
-
-    subgraph Processing
-        T[SQL Transformations]
-        INC[Incremental / UPSERT]
-        REJ[Rejected Records]
-    end
-
-    subgraph Core
-        C1[E-commerce Core]
-        C2[Influencer Payment Core]
-    end
-
-    subgraph Quality
-        DQ[Data Quality + Freshness]
-        REC[Reconciliation]
-    end
-
-    subgraph Governance
-        ASSET[Data Asset Registry]
-        LINEAGE[Dataset Lineage]
-        RUNLINEAGE[Runtime Lineage Events]
-    end
-
-    subgraph Observability
-        AUDIT[Pipeline Audit]
-        STEP[Step Logs]
-        SLA[SLA Metrics]
-    end
-
-    subgraph Serving
-        V[Analytical Views]
-        OUT[Portfolio-safe CSV Outputs]
-    end
-
-    S1 --> O
-    S2 --> O
-    O --> STG
-    STG --> T
-    T --> INC
-    INC --> C1
-    INC --> C2
-    T --> REJ
-
-    C1 --> DQ
-    C2 --> DQ
-    REJ --> DQ
-    DQ --> REC
-
-    STG --> LINEAGE
-    C1 --> LINEAGE
-    C2 --> LINEAGE
-    V --> LINEAGE
-    LINEAGE --> RUNLINEAGE
-    ASSET --> LINEAGE
-
-    O --> AUDIT
-    O --> STEP
-    STEP --> SLA
-
-    C1 --> V
-    C2 --> V
-    DQ --> V
-    V --> OUT
-```
-
-Additional diagrams:
+The full architecture is documented in:
 
 - [Pipeline Architecture](diagrams/pipeline_architecture.md)
 - [Database ER Diagram](diagrams/database_er_diagram.md)
+- [Incident Response and Recovery Runbook](docs/INCIDENT_RUNBOOK.md)
+
+High-level flow:
+
+```mermaid
+flowchart LR
+    SRC["Synthetic CSVs<br/>+ Private Excel in Hybrid"] --> ORCH["Existing Python Orchestrator"]
+    AF["Apache Airflow"] --> ORCH
+
+    ORCH --> STG["SQLite Staging"]
+    STG --> TRANS["Transform + Incremental Load"]
+    TRANS --> CORE["SQLite Core"]
+    TRANS --> REJ["Rejected / Quarantine"]
+
+    CORE --> DQ["Data Quality + Reconciliation + Freshness"]
+    REJ --> DQ
+
+    ORCH --> OBS["Audit + Step Logs + SLA"]
+    DQ --> ALERT["Alerts + Occurrences"]
+
+    CORE --> V["Serving Views / Data Marts"]
+    V --> API["Read-only FastAPI"]
+    V --> CSV["Portfolio-safe CSV Outputs"]
+
+    CORE --> GOV["Asset Registry + Static Lineage"]
+    ORCH --> RUNLINE["Runtime Lineage"]
+
+    OBS --> RCA["Incident RCA Evidence Pack"]
+    ALERT --> RCA
+    RCA --> RUNBOOK["Incident Runbook"]
+    RUNBOOK --> RECOVERY["Declared Recovery"]
+    RECOVERY --> ORCH
+
+    CI["GitHub Actions"] --> HOST["Fresh DB + Pipeline + Tests"]
+    CI --> DOCKER["Docker Build + Parity Tests"]
+```
+
+### Architecture principle: Airflow wraps the pipeline
+
+Airflow is deliberately an orchestration layer, not a second implementation of the business pipeline.
+
+The DAG executes the existing orchestrator:
+
+```text
+python /opt/project/scripts/05_run_pipeline.py
+```
+
+That keeps ingestion, transformation, quality, telemetry, retry, alerting, and recovery behavior in one implementation.
+
+### Business data versus Airflow metadata
+
+Project 01 business data remains in SQLite.
+
+PostgreSQL is used only by the Airflow stack for Airflow metadata.
 
 ---
 
-## Data Sources
+# Execution Modes
 
-### 1. Synthetic e-commerce transactions
+Mode is configured in:
 
-The public Demo Mode includes:
+```text
+config/pipeline_config.json
+```
+
+## Demo Mode
+
+```json
+{
+  "pipeline": {
+    "mode": "demo"
+  }
+}
+```
+
+Demo Mode:
+
+- Uses version-controlled synthetic CSV inputs
+- Does not require private Pawchoice files
+- Skips private-source ingestion
+- Runs the public pipeline, monitoring, lineage, quality, serving, exports, tests, Docker validation, and CI
+- Is the required CI mode
+- Is the recommended reviewer mode
+
+## Hybrid Mode
+
+```json
+{
+  "pipeline": {
+    "mode": "hybrid"
+  }
+}
+```
+
+Hybrid Mode additionally:
+
+- Loads the private Pawchoice influencer-payment workbook
+- Builds campaign / influencer / influencer-payment records
+- Hashes or masks sensitive values
+- Quarantines invalid rows
+- Preserves source file / sheet / row lineage
+
+The private workbook is not committed to the public repository.
+
+---
+
+# Data Sources
+
+## Synthetic e-commerce data
+
+Public inputs:
 
 ```text
 data/raw/synthetic/
@@ -179,211 +208,67 @@ data/raw/synthetic/
 └── payments.csv
 ```
 
-These files allow anyone to clone the repository and reproduce the pipeline without private data.
+Current Demo Mode input volume:
 
-### 2. Pawchoice influencer-payment workbook
+```text
+customers.csv       5 rows
+products.csv        5 rows
+orders.csv          5 rows
+order_items.csv     7 rows
+payments.csv        5 rows
+---------------------------
+Total              27 rows
+```
 
-Hybrid Mode can process a private workbook placed locally at:
+## Private Pawchoice workbook
+
+Hybrid Mode can use:
 
 ```text
 data/raw/pawchoice/pawchoice_payments.xlsx
 ```
 
-Expected worksheet:
-
-```text
-สรุปรอบจ่าย
-```
-
-The source contains multiple payment sections and repeated headers within the same worksheet.
-
-The real workbook is intentionally excluded from Git because it may contain personal and financial information.
-
-See:
-
-```text
-data/raw/pawchoice/README.md
-```
+The raw workbook may contain personal and financial information and is intentionally excluded from Git and Docker images.
 
 ---
 
-## Execution Modes
+# Pipeline Stages
 
-The selected mode is configured in:
-
-```text
-config/pipeline_config.json
-```
-
-### Demo Mode
-
-```json
-"mode": "demo"
-```
-
-Demo Mode:
-
-- Uses only public synthetic CSV data
-- Does not require the Pawchoice workbook
-- Skips Pawchoice ingestion and private-source transformations
-- Runs monitoring, governance, lineage, transformations, quality checks, exports, and tests normally
-- Is the default mode for GitHub Actions and Docker
-- Is the recommended mode for reviewers
-
-### Hybrid Mode
-
-```json
-"mode": "hybrid"
-```
-
-Hybrid Mode:
-
-- Loads the five synthetic CSV files
-- Loads the private Pawchoice workbook
-- Processes campaign, influencer, and influencer-payment data
-- Applies privacy protection
-- Routes invalid source rows to rejected records
-- Preserves source lineage
-
-Supported values:
+The end-to-end orchestrator is:
 
 ```text
-demo
-hybrid
+scripts/05_run_pipeline.py
 ```
 
----
+It executes four main pipeline stages.
 
-## Project Structure
-
-```text
-sql-ecommerce-data-engineering/
-├── .github/
-│   └── workflows/
-│       └── ci.yml
-│
-├── config/
-│   └── pipeline_config.json
-│
-├── data/
-│   ├── raw/
-│   │   ├── synthetic/
-│   │   │   ├── customers.csv
-│   │   │   ├── products.csv
-│   │   │   ├── orders.csv
-│   │   │   ├── order_items.csv
-│   │   │   └── payments.csv
-│   │   └── pawchoice/
-│   │       ├── .gitkeep
-│   │       └── README.md
-│   ├── staging/
-│   │   └── .gitkeep
-│   └── processed/
-│       ├── .gitkeep
-│       └── sample_*.csv
-│
-├── database/
-│   └── .gitkeep
-│
-├── diagrams/
-│   ├── pipeline_architecture.md
-│   └── database_er_diagram.md
-│
-├── docs/
-│   └── images/
-│       ├── pipeline_success.png
-│       ├── quality_checks_passed.png
-│       └── automated_tests_passed.png
-│
-├── logs/
-│   └── .gitkeep
-│
-├── quality_checks/
-│   ├── 01_null_checks.sql
-│   ├── 02_duplicate_checks.sql
-│   ├── 03_referential_integrity.sql
-│   ├── 04_reconciliation_checks.sql
-│   ├── 05_business_rule_checks.sql
-│   ├── 06_influencer_payment_checks.sql
-│   └── 07_freshness_checks.sql
-│
-├── queries/
-│   ├── 01_pipeline_monitoring.sql
-│   ├── 02_load_audit_analysis.sql
-│   ├── 03_data_freshness_checks.sql
-│   └── 04_performance_validation.sql
-│
-├── schema/
-│   ├── 01_create_staging_tables.sql
-│   ├── 02_create_core_tables.sql
-│   ├── 03_create_indexes.sql
-│   ├── 04_create_views.sql
-│   ├── 05_create_governance_tables.sql
-│   ├── 06_seed_data_assets.sql
-│   ├── 07_create_lineage_edges.sql
-│   ├── 08_seed_lineage_edges.sql
-│   ├── 09_correct_lineage_edges.sql
-│   ├── 10_create_lineage_run_events.sql
-│   ├── 11_create_governance_views.sql
-│   ├── 12_fix_governance_dependency_views.sql
-│   └── 13_fix_pii_classification.sql
-│
-├── scripts/
-│   ├── 01_setup_database.py
-│   ├── 02_load_raw_data.py
-│   ├── 03_run_transformations.py
-│   ├── 04_run_quality_checks.py
-│   ├── 05_run_pipeline.py
-│   ├── 06_export_portfolio_outputs.py
-│   └── 08_performance_benchmark.py
-│
-├── tests/
-│   ├── test_fresh_database_setup.py
-│   ├── test_governance_lineage.py
-│   ├── test_incremental_load.py
-│   ├── test_quality_checks.py
-│   ├── test_schema.py
-│   └── test_transformations.py
-│
-├── transformations/
-│   ├── 01_clean_customers.sql
-│   ├── 02_clean_products.sql
-│   ├── 03_clean_orders.sql
-│   ├── 04_clean_order_items.sql
-│   ├── 05_clean_payments.sql
-│   ├── 06_incremental_load.sql
-│   └── 07_clean_influencer_payments.sql
-│
-├── .dockerignore
-├── .gitignore
-├── Dockerfile
-├── README.md
-└── requirements.txt
-```
-
----
-
-## Pipeline Stages
-
-### 1. Database setup
+## 1. SETUP_DATABASE
 
 ```text
 scripts/01_setup_database.py
 ```
 
-Creates and validates the project database from a fresh state.
+Responsibilities:
 
-Current fresh-database result:
+- Build SQLite objects from repository schema files
+- Recreate the project database from source-controlled SQL
+- Validate required tables, views, and indexes
+- Seed governance metadata
+- Validate lineage references
+- Validate PII classification
+- Validate SQLite integrity
+
+Current fresh-database contract:
 
 ```text
-Tables: 22
-Views: 19
-Indexes: 49
+Tables:  25
+Views:   20
+Indexes: 57
+Assets:  32
+Lineage edges: 34
 ```
 
-The setup process executes all schema files in order and validates required database objects, governance metadata, PII classifications, lineage references, and SQLite integrity.
-
-### 2. Raw-data ingestion
+## 2. LOAD_RAW_DATA
 
 ```text
 scripts/02_load_raw_data.py
@@ -391,25 +276,14 @@ scripts/02_load_raw_data.py
 
 Responsibilities:
 
-- Load synthetic CSV files into staging
-- Load Pawchoice Excel data in Hybrid Mode
-- Track source file and source-row location where applicable
-- Respect pipeline execution mode
-- Prepare data for deterministic transformation
+- Load synthetic CSVs into staging
+- Load the private workbook in Hybrid Mode
+- Validate expected source structure
+- Detect missing files and schema drift
+- Preserve source-location metadata
+- Respect Demo / Hybrid execution mode
 
-Current Demo Mode input:
-
-```text
-customers.csv      5 rows
-products.csv       5 rows
-orders.csv         5 rows
-order_items.csv    7 rows
-payments.csv       5 rows
--------------------------
-Total             27 rows
-```
-
-### 3. Transformations
+## 3. RUN_TRANSFORMATIONS
 
 ```text
 scripts/03_run_transformations.py
@@ -417,247 +291,35 @@ scripts/03_run_transformations.py
 
 Responsibilities:
 
-- Clean and normalize source values
-- Standardize statuses
-- Apply UPSERT logic
-- Load relational core tables
+- Clean and standardize source values
+- Execute incremental transformations
+- Load core relational tables
+- Apply UPSERT / idempotency behavior
+- Quarantine invalid source records
 - Protect sensitive fields
-- Route invalid rows into rejected records
-- Support incremental execution behavior
+- Update watermark state
+- Preserve run-linked metadata
 
-### 4. Data-quality checks
+## 4. RUN_QUALITY_CHECKS
 
 ```text
 scripts/04_run_quality_checks.py
 ```
 
-The pipeline executes seven SQL quality-check files:
+Seven SQL quality packs execute:
 
 ```text
-01_null_checks.sql
-02_duplicate_checks.sql
-03_referential_integrity.sql
-04_reconciliation_checks.sql
-05_business_rule_checks.sql
-06_influencer_payment_checks.sql
-07_freshness_checks.sql
+quality_checks/
+├── 01_null_checks.sql
+├── 02_duplicate_checks.sql
+├── 03_referential_integrity.sql
+├── 04_reconciliation_checks.sql
+├── 05_business_rule_checks.sql
+├── 06_influencer_payment_checks.sql
+└── 07_freshness_checks.sql
 ```
 
-### 5. End-to-end orchestration
-
-```text
-scripts/05_run_pipeline.py
-```
-
-The orchestrator:
-
-- Creates one pipeline `run_id`
-- Executes steps in order
-- Records step attempts
-- Records runtime metrics
-- Evaluates SLA thresholds
-- Links runtime lineage events to pipeline execution
-- Supports recovery-oriented execution metadata
-- Stops on non-tolerated failures
-
-### 6. Portfolio-safe export
-
-```text
-scripts/06_export_portfolio_outputs.py
-```
-
-Exports analytical CSV files designed for portfolio review without exposing private personal information.
-
-### 7. Performance benchmark
-
-```text
-scripts/08_performance_benchmark.py
-```
-
-Creates an isolated benchmark database with:
-
-```text
-100,000 orders
-100,000 payments
-20 timed rounds per query
-```
-
-The benchmark compares baseline single-column indexing against optimized composite indexing and prints both query plans and timing results.
-
----
-
-## Database Model
-
-### E-commerce core
-
-```text
-customers
-products
-orders
-order_items
-payments
-```
-
-Relationships:
-
-```text
-customers ──< orders
-orders    ──< order_items
-products  ──< order_items
-orders    ──< payments
-```
-
-### Influencer-payment domain
-
-```text
-campaigns
-influencers
-influencer_payments
-rejected_influencer_records
-```
-
-Relationships:
-
-```text
-campaigns   ──< influencer_payments
-influencers ──< influencer_payments
-```
-
-### Pipeline metadata
-
-```text
-pipeline_audit
-pipeline_step_log
-pipeline_sla_metrics
-pipeline_watermark
-```
-
-### Governance metadata
-
-```text
-data_assets
-lineage_edges
-lineage_run_events
-```
-
----
-
-## Incremental Loading
-
-Incremental loading is implemented in:
-
-```text
-transformations/06_incremental_load.sql
-```
-
-The pipeline uses `pipeline_watermark` to track the most recent processed timestamp.
-
-Current reliability settings include:
-
-```text
-Incremental lookback: 10 minutes
-Future watermark tolerance: 5 minutes
-```
-
-The lookback window allows late-arriving records to be reconsidered safely.
-
-Unique keys, UPSERT logic, and repeatable transformations preserve idempotency when the same data is processed more than once.
-
----
-
-## Retry, Recovery, and Backfill Design
-
-The pipeline includes reliability-oriented execution behavior for common operational scenarios.
-
-Supported concepts include:
-
-- Normal execution
-- Retry attempts
-- Recovery metadata
-- Backfill date ranges
-- Late-arriving data handling
-- Watermark protection
-- Idempotent reruns
-- Failure-aware audit records
-
-Pipeline execution metadata can distinguish:
-
-```text
-NORMAL
-RECOVERY
-BACKFILL
-```
-
-This allows operational history to retain why a run occurred rather than treating every execution as identical.
-
----
-
-## Freshness and STALE_DATA Detection
-
-Freshness checks are implemented in:
-
-```text
-quality_checks/07_freshness_checks.sql
-```
-
-The check evaluates the most recent load timestamp for expected staging datasets.
-
-Possible freshness states include:
-
-```text
-FRESH
-STALE_DATA
-NOT_LOADED
-```
-
-The threshold is configuration-driven.
-
-This allows stale data to be detected even when structural and relational quality checks still pass.
-
----
-
-## Data Quality
-
-The quality layer evaluates:
-
-- Required values
-- Duplicate keys
-- Duplicate source rows
-- Duplicate record hashes
-- Referential integrity
-- Order-total reconciliation
-- Payment reconciliation
-- Negative or invalid amounts
-- Allowed business statuses
-- Privacy rules
-- Rejected-record reasons
-- Source lineage
-- Freshness
-
-### Severity model
-
-Issues can be classified as:
-
-```text
-WARNING
-ERROR
-CRITICAL
-```
-
-Current policy:
-
-- **WARNING** — reported, but does not stop the pipeline
-- **ERROR** — tolerated only while configured thresholds are not exceeded
-- **CRITICAL** — any occurrence fails the quality gate
-
-Current ERROR tolerance:
-
-```text
-Maximum issue count: 5
-Maximum issue rate: 1%
-```
-
-A successful Demo Mode quality run produces:
+A clean Demo Mode run currently produces:
 
 ```text
 CRITICAL=0
@@ -667,20 +329,145 @@ WARNING=0
 
 ---
 
-## Reconciliation
+# SQLite Data Model
 
-The reconciliation layer validates that related financial and transactional values agree.
+The authoritative ER documentation is:
 
-Examples include:
+[Database ER Diagram](diagrams/database_er_diagram.md)
 
-- Order totals versus order-item totals
-- Line totals versus quantity × unit price
-- Payment totals versus order totals
-- Influencer payment consistency
+The physical schema contains **25 tables**.
 
-A configurable amount tolerance is used for numeric comparisons.
+## Staging — 6 tables
 
-Current tolerance:
+```text
+stg_customers
+stg_products
+stg_orders
+stg_order_items
+stg_payments
+stg_influencer_payments
+```
+
+## E-commerce core — 5 tables
+
+```text
+customers
+products
+orders
+order_items
+payments
+```
+
+## Influencer-payment core — 3 tables
+
+```text
+campaigns
+influencers
+influencer_payments
+```
+
+## Quarantine — 2 tables
+
+```text
+rejected_influencer_records
+rejected_source_records
+```
+
+## Pipeline operations / observability — 6 tables
+
+```text
+pipeline_watermark
+pipeline_audit
+pipeline_step_log
+pipeline_sla_metrics
+pipeline_alerts
+pipeline_alert_occurrences
+```
+
+## Governance / lineage — 3 tables
+
+```text
+data_assets
+lineage_edges
+lineage_run_events
+```
+
+---
+
+# Incremental Loading and Idempotency
+
+Incremental loading is implemented through the project transformation layer and `pipeline_watermark`.
+
+Current reliability configuration includes:
+
+```text
+Incremental lookback:        10 minutes
+Future watermark tolerance:   5 minutes
+```
+
+The lookback allows late-arriving records to be reconsidered.
+
+Idempotency is protected through:
+
+- Unique business keys
+- UPSERT behavior
+- Record hashes
+- Duplicate-delivery regression tests
+- Rejected-record deduplication
+- Watermark handling
+
+The automated suite includes a duplicate-delivery test proving that repeated delivery does not duplicate trusted core rows.
+
+---
+
+# Structural Data Contracts
+
+The ingestion layer rejects incompatible source structure before unsafe processing.
+
+Covered cases include:
+
+- Missing required columns
+- Unexpected columns
+- Duplicate headers
+- Flexible column order
+- Missing required source files
+
+This allows the project to distinguish a source contract break from a downstream transformation problem.
+
+---
+
+# Data Quality
+
+The quality system covers:
+
+- Required values
+- Duplicate keys
+- Duplicate source rows
+- Referential integrity
+- Reconciliation
+- Business rules
+- Allowed status values
+- Invalid / negative amounts
+- Privacy validation
+- Rejected-record evidence
+- Freshness
+
+## Quality severity policy
+
+```text
+WARNING   report only
+ERROR     threshold-based
+CRITICAL  any occurrence fails
+```
+
+Current ERROR tolerance:
+
+```text
+Maximum issue count: 5
+Maximum issue rate:  1%
+```
+
+Current reconciliation amount tolerance:
 
 ```text
 0.01
@@ -688,108 +475,109 @@ Current tolerance:
 
 ---
 
-## Rejected Records
+# Freshness Quality Gate
 
-Invalid Pawchoice source rows are retained in:
-
-```text
-rejected_influencer_records
-```
-
-Examples of rejection reasons include:
+Freshness validation is implemented in:
 
 ```text
-MISSING_INFLUENCER_HANDLE
-MISSING_CAMPAIGN_NAME
-MISSING_SOURCE_SECTION
-INVALID_PAYMENT_STATUS
-INVALID_FEE_AMOUNT
-NEGATIVE_FEE_AMOUNT
+quality_checks/07_freshness_checks.sql
 ```
 
-Rejected data retains source lineage such as:
+Supported states include:
 
 ```text
-source_file
-source_sheet
-source_row_number
-rejection_reason
+FRESH
+STALE_DATA
+NOT_LOADED
 ```
 
-Invalid records are therefore traceable instead of being silently discarded.
+Regression tests explicitly prove:
+
+- Fresh watermark passes
+- Stale data fails the quality gate
+- Never-loaded required data is treated as critical
 
 ---
 
-## Privacy and PII Protection
+# Quarantine and Rejected Records
 
-The project is designed to avoid exposing raw personal and financial information in the public repository.
+Instead of silently dropping bad data or forcing it into trusted tables, Project 01 keeps rejection evidence.
 
-| Sensitive source field | Stored form |
+Examples include:
+
+- Invalid payment amount
+- Orphaned order / broken reference
+- Missing campaign or influencer data
+- Invalid status
+- Invalid fee amount
+- Structurally invalid source rows
+
+Generic rejection evidence may include:
+
+```text
+run_id
+dataset_name
+source_file
+source_row_number
+raw_record_json
+rejected_column
+rejected_value
+rejection_reason
+rejection_type
+rejected_at
+```
+
+`rejected_source_records.run_id` is nullable because not every source failure can be durably linked to a pipeline run.
+
+---
+
+# Privacy and PII Protection
+
+The public repository intentionally excludes raw private source artifacts.
+
+| Sensitive field | Public/runtime handling |
 |---|---|
 | Bank account | SHA-256 hash |
-| Phone number | SHA-256 hash |
-| Account holder name | Partially masked |
+| Phone | SHA-256 hash |
+| Account name | Masked |
 | Notes | Sanitized |
-| Source location | Lineage metadata |
+| Source position | Preserved as lineage metadata |
 
-The public Git repository excludes:
+Private Pawchoice input, runtime databases, runtime logs, secrets, and generated private artifacts are excluded through repository / Docker ignore rules.
 
-- Private Pawchoice Excel files
-- Private PDFs
-- SQLite runtime databases
-- Pipeline logs
-- Environment files and secrets
-- Docker-generated runtime artifacts
-
-The `.gitignore` intentionally allows only safe synthetic source data and portfolio-safe sample outputs.
+The public API does not expose private raw-source paths or raw sensitive error details.
 
 ---
 
-## Governance and Data Asset Registry
+# Governance and Lineage
 
-The governance layer registers known datasets in:
+## Data Asset Registry
 
 ```text
 data_assets
 ```
 
-Current seeded registry:
+Current fresh seed:
 
 ```text
-32 data assets
+32 assets
 ```
 
-Metadata includes fields such as:
+Metadata includes:
 
-- Asset key
-- Asset name
+- Stable asset key
 - Asset type
 - Data layer
 - Data domain
 - Source system
-- Asset location
+- Physical / logical location
 - Data format
 - Classification
 - PII flag
 - Owner
-- Description
 - Active status
 
-Supported classification levels include:
-
-```text
-INTERNAL
-CONFIDENTIAL
-RESTRICTED
-```
-
-PII-bearing assets are validated so they cannot remain incorrectly classified at a lower sensitivity level.
-
----
-
-## Data Lineage
-
-Static dataset-level lineage is stored in:
+## Static dataset lineage
 
 ```text
 lineage_edges
@@ -798,36 +586,18 @@ lineage_edges
 Current graph:
 
 ```text
-34 dataset lineage edges
+34 dataset-level lineage edges
 ```
 
-The lineage model connects source, staging, core, metadata, and analytical assets.
-
-Transformation types include:
-
-```text
-INGESTION
-CLEANING
-TRANSFORMATION
-INCREMENTAL_LOAD
-AGGREGATION
-RECONCILIATION
-QUALITY
-EXPORT
-OTHER
-```
-
-### Runtime lineage
-
-Execution history is stored separately in:
+## Runtime lineage
 
 ```text
 lineage_run_events
 ```
 
-This keeps the static dependency graph separate from per-run execution evidence.
+The project separates static lineage from execution evidence.
 
-Runtime events can record:
+Runtime event states include:
 
 ```text
 SUCCESS
@@ -835,42 +605,32 @@ FAILED
 SKIPPED
 ```
 
-In Demo Mode, Pawchoice-related lineage is explicitly recorded as skipped rather than disappearing from operational history.
+In Demo Mode, private-source lineage can be recorded as skipped rather than disappearing from history.
 
----
-
-## Governance Views
-
-The project provides four governance-oriented views:
+## Recursive dependency views
 
 ```text
-vw_data_lineage
-vw_lineage_run_history
 vw_asset_upstream_dependencies
 vw_asset_downstream_dependencies
 ```
 
-The recursive dependency views allow an asset to be traced through multiple upstream or downstream levels.
-
-Example conceptual path:
+These allow multi-hop dependency tracing, for example:
 
 ```text
 orders.csv
-   ↓
+  ↓
 stg_orders
-   ↓
+  ↓
 orders
-   ↓
+  ↓
 vw_daily_sales_summary
 ```
 
-Recursive lineage tests verify that these paths are correct and deduplicated.
-
 ---
 
-## Monitoring and SLA Metrics
+# Monitoring and SLA
 
-The pipeline records operational metadata in:
+Operational telemetry is stored in:
 
 ```text
 pipeline_audit
@@ -878,24 +638,22 @@ pipeline_step_log
 pipeline_sla_metrics
 ```
 
-Step-level monitoring records:
+Recorded evidence includes:
 
 - Pipeline name
 - Run ID
-- Step number
-- Step name
+- Run type
+- Recovery linkage
+- Step number / name
 - Script name
 - Attempt number
 - Status
-- Start and end time
+- Start / end timestamp
 - Duration
-- Rows read
-- Rows written
-- Rows rejected
-- Error type
-- Error message
+- Rows read / written / rejected
+- Error type / message
 - SLA threshold
-- SLA status
+- SLA state
 
 Current Demo Mode SLA thresholds:
 
@@ -906,7 +664,7 @@ RUN_TRANSFORMATIONS   15 seconds
 RUN_QUALITY_CHECKS    10 seconds
 ```
 
-Possible SLA states include:
+SLA states:
 
 ```text
 ON_TIME
@@ -916,95 +674,384 @@ NOT_EVALUATED
 
 ---
 
-## Performance Engineering
+# Monitoring Alerts
 
-### Permanent optimized indexes
+Project 01 has durable alert state plus occurrence history.
 
-Performance analysis led to two composite indexes:
-
-```text
-idx_orders_status_date(order_status, order_date)
-
-idx_payments_date_status(payment_date, payment_status)
-```
-
-The following older indexes were intentionally retired as redundant or superseded:
+Tables:
 
 ```text
-idx_customers_email
-idx_orders_order_status
-idx_payments_payment_date
+pipeline_alerts
+pipeline_alert_occurrences
 ```
 
-`customers.email` remains protected by its SQLite UNIQUE autoindex.
+Monitoring view:
 
-### Performance validation SQL
+```text
+vw_pipeline_alert_monitoring
+```
+
+Alert types include:
+
+```text
+STEP_FAILURE
+SLA_BREACH
+DATA_QUALITY_WARNING
+DATA_QUALITY_FAILURE
+```
+
+Severity values:
+
+```text
+CRITICAL
+ERROR
+WARNING
+```
+
+Stable fingerprints allow the same operational failure across different runs to map to one alert while retaining separate occurrence evidence.
+
+Resolved alerts reopen when the same problem recurs.
+
+Alert-write failures are intentionally non-blocking so a secondary observability failure does not hide or replace the primary pipeline result.
+
+## Alert lifecycle
+
+```text
+OPEN → ACKNOWLEDGED → RESOLVED
+```
+
+Manage an alert:
+
+```bash
+python scripts/07_manage_alerts.py acknowledge <ALERT_ID>
+python scripts/07_manage_alerts.py resolve <ALERT_ID>
+```
+
+An OPEN alert cannot jump directly to RESOLVED.
+
+---
+
+# Retry and Database Lock Handling
+
+The orchestrator includes retry handling for retryable SQLite operational errors such as transient database locks.
+
+Regression tests prove:
+
+- Non-retryable DB errors fail immediately
+- A transient lock retries and can succeed
+- A persistent lock exhausts the retry budget and fails
+
+This is intentionally narrower than retrying every exception.
+
+---
+
+# Recovery Contract
+
+Pipeline audit records distinguish:
+
+```text
+NORMAL
+RECOVERY
+BACKFILL
+```
+
+A declared recovery must point to a valid failed top-level pipeline run.
+
+Run a declared recovery:
+
+```bash
+python scripts/05_run_pipeline.py --recovery-of <FAILED_RUN_ID>
+```
+
+The recovery run records:
+
+```text
+recovery_of_run_id
+```
+
+This prevents a later unrelated successful run from being incorrectly described as the recovery of an earlier incident.
+
+Recovery and backfill arguments are separate execution modes and are not combined.
+
+---
+
+# Incident Troubleshooting
+
+Incident evidence queries live in:
+
+```text
+queries/05_incident_troubleshooting.sql
+```
+
+The pack is read-only and contains nine troubleshooting statements covering:
+
+1. Recent run inventory
+2. Latest incident summary
+3. Step evidence with audit fallback
+4. SLA evidence
+5. Rejected-source evidence
+6. Runtime lineage evidence
+7. Failure-to-recovery mapping
+8. Quality / reconciliation evidence
+9. Current freshness / watermark state
+
+Operating rule:
+
+**Do not guess root cause. Use recorded evidence.**
+
+Runbook:
+
+[Incident Response and Recovery Runbook](docs/INCIDENT_RUNBOOK.md)
+
+The runbook includes failure scenarios for missing sources, schema drift, invalid / orphaned records, database locks, stale data, quality-gate failure, and SLA breach.
+
+---
+
+# Business Serving Layer
+
+The SQLite serving layer includes operational and business-facing views such as:
+
+```text
+vw_daily_sales_summary
+vw_product_sales_summary
+vw_customer_order_summary
+vw_payment_summary
+vw_payment_reconciliation
+vw_pipeline_run_summary
+vw_data_quality_summary
+vw_pipeline_alert_monitoring
+```
+
+Business calculation tests use controlled fixtures to validate aggregation semantics.
+
+For example, Average Order Value is computed at **order grain** rather than incorrectly averaging order totals after joining orders to multiple line items.
+
+That prevents a common 1:N join aggregation bug from silently producing plausible-but-wrong metrics.
+
+---
+
+# Read-only REST API
+
+FastAPI application:
+
+```text
+api/app.py
+```
+
+The API opens SQLite with explicit read-only access.
+
+Start it after creating the database:
+
+```bash
+uvicorn api.app:app --host 0.0.0.0 --port 8000
+```
+
+Interactive API documentation is then available at:
+
+```text
+http://localhost:8000/docs
+```
+
+## Endpoints
+
+```text
+GET /health
+GET /api/v1/sales/daily
+GET /api/v1/products/sales
+GET /api/v1/pipelines/runs
+GET /api/v1/quality/issues
+GET /api/v1/alerts
+```
+
+Supported filters include date range, category, run status, quality source, alert status, alert severity, and bounded result limits.
+
+The serving layer intentionally does not expose business-data mutation routes.
+
+---
+
+# Apache Airflow Orchestration
+
+Airflow files:
+
+```text
+Dockerfile.airflow
+docker-compose.airflow.yml
+airflow/dags/ecommerce_pipeline_dag.py
+```
+
+Current design:
+
+```text
+Airflow:       3.3.0
+Python:        3.12
+Executor:      LocalExecutor
+Metadata DB:   PostgreSQL 17
+DAG:           project01_ecommerce_pipeline
+Schedule:      @daily
+Catchup:       false
+Max active:    1 run
+Retries:       2
+Retry delay:   5 minutes
+API host port: 8081
+```
+
+Start the stack:
+
+```bash
+docker compose -f docker-compose.airflow.yml up --build -d
+```
+
+Inspect services:
+
+```bash
+docker compose -f docker-compose.airflow.yml ps
+```
+
+Airflow web/API server:
+
+```text
+http://localhost:8081
+```
+
+Stop the stack:
+
+```bash
+docker compose -f docker-compose.airflow.yml down
+```
+
+Airflow wraps the existing pipeline; it does not reimplement pipeline logic inside the DAG.
+
+---
+
+# Performance Engineering
+
+Performance validation:
 
 ```text
 queries/04_performance_validation.sql
 ```
 
-This file:
-
-- Runs `ANALYZE`
-- Inventories explicit indexes
-- Detects missing expected indexes
-- Guards against retired indexes reappearing
-- Verifies UNIQUE-index protection
-- Inspects table cardinalities
-- Runs representative `EXPLAIN QUERY PLAN` checks
-- Covers transactional, monitoring, and governance queries
-
-### Benchmark utility
+Benchmark utility:
 
 ```text
 scripts/08_performance_benchmark.py
 ```
 
-The isolated benchmark compares query performance before and after composite-index creation.
+The benchmark creates an isolated database using:
 
-Observed benchmark example from the optimization phase:
+```text
+100,000 orders
+100,000 payments
+20 timed rounds per query
+```
+
+Production composite indexes include:
+
+```text
+idx_orders_status_date(order_status, order_date)
+idx_payments_date_status(payment_date, payment_status)
+```
+
+Performance regression tests also verify that representative query plans use the expected composite indexes.
+
+Observed optimization-phase benchmark:
 
 ```text
 DAILY_SALES
-Before: 8.602 ms
-After : 7.726 ms
-Speedup: 1.11x
+Before: 7.906 ms
+After : 6.768 ms
+Speedup: 1.17x
 
 PAYMENT_DAILY
-Before: 48.682 ms
-After : 24.554 ms
+Before: 44.102 ms
+After : 22.316 ms
 Speedup: 1.98x
 ```
 
-Runtime varies by hardware, operating system, SQLite version, and background workload.
+Benchmark timings vary by hardware, OS, SQLite version, and system load.
 
 ---
 
-## Fresh-Database Reproducibility
+# Automated Testing
 
-A core project requirement is that the repository must rebuild correctly without relying on an existing local SQLite database.
+Run the complete suite:
 
-Automated validation:
-
-```text
-tests/test_fresh_database_setup.py
+```bash
+python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-It creates a temporary database and verifies:
+Current verified Demo Mode result:
 
-- 22 required tables
-- 19 required views
-- 49 named indexes
-- Governance seed data
-- 32 assets
-- 34 lineage edges
-- No runtime lineage events in a brand-new database
-- Valid PII classifications
-- Clean foreign-key integrity
-- Correct recursive lineage
+```text
+Ran 193 tests
+OK (skipped=4)
+```
 
-Run directly:
+Coverage includes:
+
+- Fresh database creation
+- Schema object counts
+- Foreign-key integrity
+- Structural source contracts
+- Missing-file failure
+- Incremental loading
+- Duplicate-delivery idempotency
+- Referential-integrity quarantine
+- Invalid-payment quarantine
+- Freshness quality gate
+- Data-quality SQL
+- Reconciliation
+- Privacy and masking
+- Governance and lineage
+- Runtime lineage
+- Recovery contract / metadata
+- Incident troubleshooting queries
+- Database-lock retry
+- Alert schema / fingerprinting
+- Alert occurrence history
+- Alert deduplication
+- Alert reopen semantics
+- Alert lifecycle
+- Alert resilience
+- Monitoring schema contract
+- Business-serving calculations
+- Query-plan / performance regression
+- REST API contract and integration
+- Airflow file / compose / execution-routing contracts
+
+Four tests are skipped in Demo Mode because they require the private Pawchoice workbook.
+
+---
+
+# Failure Engineering
+
+The repository intentionally tests failures instead of validating only the happy path.
+
+Examples include:
+
+- Required source file missing
+- Required source column missing
+- Unexpected source column
+- Duplicate header
+- Invalid payment amount
+- Orphaned order
+- Stale watermark
+- Required dataset never loaded
+- Duplicate source delivery
+- SQLite database lock
+- Pipeline step failure
+- SLA breach
+- Alert persistence failure
+- Invalid recovery target
+- Business aggregation grain bug
+
+These scenarios provide concrete evidence for the project's **Break → Troubleshoot → Recover** workflow.
+
+---
+
+# Fresh-Database Reproducibility
+
+Run:
 
 ```bash
 python -m unittest tests.test_fresh_database_setup -v
@@ -1017,101 +1064,33 @@ Ran 4 tests
 OK
 ```
 
+The test creates a temporary SQLite database from repository source and verifies:
+
+```text
+25 tables
+20 views
+57 explicit named indexes
+32 seeded data assets
+34 dataset lineage edges
+0 initial runtime lineage events
+clean foreign-key integrity
+valid PII classification
+correct recursive lineage
+```
+
+This protects against a common local-development failure mode where the project works only because a developer already has a manually patched database.
+
 ---
 
-## Automated Tests
+# Portfolio-safe Outputs
 
-Run all tests:
+Export:
 
 ```bash
-python -m unittest discover -s tests -p "test_*.py" -v
+python scripts/06_export_portfolio_outputs.py
 ```
 
-Current Demo Mode result:
-
-```text
-Ran 71 tests
-OK (skipped=4)
-```
-
-Coverage includes:
-
-- Fresh database creation
-- Required schema objects
-- Governance objects
-- Data asset uniqueness
-- Lineage graph integrity
-- Recursive lineage correctness
-- Runtime lineage-to-pipeline linkage
-- PII classification
-- Foreign-key integrity
-- Incremental loading
-- Idempotent reruns
-- Business-key uniqueness
-- Record-hash uniqueness
-- Data-quality SQL execution
-- Reconciliation
-- Privacy masking and hashing
-- Rejected-record lineage
-- Transformations
-- Mode-aware Pawchoice behavior
-
-### Test evidence
-
-![Automated tests passed](docs/images/automated_tests_passed.png)
-
----
-
-## Demo Mode End-to-End Result
-
-A successful Demo Mode run processes:
-
-```text
-Synthetic staging rows: 27
-Pawchoice source: skipped
-```
-
-Core synthetic result:
-
-```text
-customers      5
-products       5
-orders         5
-order_items    7
-payments       5
-```
-
-Quality result:
-
-```text
-CRITICAL=0
-ERROR=0
-WARNING=0
-```
-
-The pipeline completes:
-
-```text
-SETUP_DATABASE        SUCCESS
-LOAD_RAW_DATA         SUCCESS
-RUN_TRANSFORMATIONS   SUCCESS
-RUN_QUALITY_CHECKS    SUCCESS
-PIPELINE              SUCCESS
-```
-
-### Pipeline evidence
-
-![Pipeline completed successfully](docs/images/pipeline_success.png)
-
-### Quality evidence
-
-![All quality checks passed](docs/images/quality_checks_passed.png)
-
----
-
-## Portfolio Outputs
-
-The export script creates six public-safe analytical files:
+Generated public-safe files:
 
 ```text
 data/processed/
@@ -1123,20 +1102,11 @@ data/processed/
 └── sample_rejected_record_summary.csv
 ```
 
-These demonstrate:
-
-- Campaign-level payment summaries
-- Data-quality outcomes
-- Daily e-commerce sales
-- Payment-status summaries
-- Pipeline execution history
-- Rejected-record summaries
-
-The exports intentionally exclude private raw PII.
+These are designed for portfolio review without exposing private raw PII.
 
 ---
 
-## Local Installation
+# Local Setup
 
 Clone:
 
@@ -1145,156 +1115,77 @@ git clone https://github.com/bodinkc30-Pete/sql-ecommerce-data-engineering.git
 cd sql-ecommerce-data-engineering
 ```
 
-Create or activate a Python environment, then install dependencies:
+Install dependencies:
 
 ```bash
 python -m pip install -r requirements.txt
 ```
 
-Primary dependency:
+Runtime / test dependencies currently declared:
 
 ```text
 openpyxl==3.1.5
+fastapi>=0.115,<1.0
+uvicorn>=0.30,<1.0
+httpx2>=2.10,<3.0
 ```
 
----
-
-## Run Locally
-
-### Complete pipeline
+Run the complete Demo Mode pipeline:
 
 ```bash
 python scripts/05_run_pipeline.py
 ```
 
-### Export portfolio outputs
+Export outputs:
 
 ```bash
 python scripts/06_export_portfolio_outputs.py
 ```
 
-### Fresh-database validation
-
-```bash
-python -m unittest tests.test_fresh_database_setup -v
-```
-
-### Full automated suite
+Run tests:
 
 ```bash
 python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
-### Performance validation
-
-Using the SQLite CLI:
-
-```bash
-sqlite3 database/ecommerce_data_engineering.db < queries/04_performance_validation.sql
-```
-
-Or execute the SQL through Python/DB Browser for SQLite.
-
-### Performance benchmark
-
-```bash
-python scripts/08_performance_benchmark.py
-```
-
 ---
 
-## Docker
+# Docker
 
-The project uses:
+Application image:
 
 ```text
+Dockerfile
 python:3.12-slim
+non-root appuser
 ```
 
-The image:
-
-- Installs requirements
-- Copies only code and public synthetic source data
-- Excludes private Pawchoice input
-- Creates writable runtime directories
-- Runs as non-root user `appuser`
-- Starts the main pipeline by default
-
-### Build
+Build:
 
 ```bash
 docker build -t sql-ecommerce-data-engineering:demo .
 ```
 
-### Run
+Run:
 
 ```bash
 docker run --rm --name sql-ecommerce-demo sql-ecommerce-data-engineering:demo
 ```
 
-### Full Docker validation
+Full parity validation:
 
 ```bash
 docker run --rm \
-  --name sql-ecommerce-governance-test \
+  --name sql-ecommerce-docker-validation \
   sql-ecommerce-data-engineering:demo \
   sh -c "python -m unittest tests.test_fresh_database_setup -v && python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py && python -m unittest discover -s tests -p 'test_*.py' -v"
 ```
 
-Verified Docker result:
-
-```text
-Fresh DB validation     PASS
-Pipeline                SUCCESS
-Portfolio export        SUCCESS
-Automated tests         71
-Expected skips          4
-Failures                0
-Errors                  0
-```
+The Docker validation intentionally performs fresh-database setup, pipeline execution, export, and the complete test suite in one container.
 
 ---
 
-## Persist Docker Outputs
-
-### Windows Command Prompt
-
-Create output folders:
-
-```bat
-mkdir database\docker logs\docker data\processed\docker
-```
-
-Run with bind mounts:
-
-```bat
-docker run --rm --name sql-ecommerce-artifacts ^
-  -v "%cd%\database\docker:/app/database" ^
-  -v "%cd%\logs\docker:/app/logs" ^
-  -v "%cd%\data\processed\docker:/app/data/processed" ^
-  sql-ecommerce-data-engineering:demo ^
-  sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py"
-```
-
-### macOS / Linux
-
-```bash
-mkdir -p database/docker logs/docker data/processed/docker
-
-docker run --rm \
-  --name sql-ecommerce-artifacts \
-  -v "$(pwd)/database/docker:/app/database" \
-  -v "$(pwd)/logs/docker:/app/logs" \
-  -v "$(pwd)/data/processed/docker:/app/data/processed" \
-  sql-ecommerce-data-engineering:demo \
-  sh -c "python scripts/05_run_pipeline.py && python scripts/06_export_portfolio_outputs.py"
-```
-
-Generated runtime directories are ignored by Git.
-
----
-
-## GitHub Actions CI
+# GitHub Actions CI
 
 Workflow:
 
@@ -1302,78 +1193,220 @@ Workflow:
 .github/workflows/ci.yml
 ```
 
-The workflow runs on:
+Runs on:
 
-- Pushes to `main`
+- Push to `main`
 - Pull requests targeting `main`
 
-### Job 1 — Python pipeline and tests
+## Job 1 — Run Demo Pipeline and Tests
 
-The workflow:
+Validates:
 
-1. Checks out the repository
-2. Sets up Python 3.12
-3. Installs dependencies
-4. Verifies Demo Mode
-5. Validates fresh-database reproducibility
-6. Runs the end-to-end pipeline
-7. Exports portfolio-safe outputs
-8. Runs the full automated test suite
-9. Uploads pipeline artifacts
+1. Checkout
+2. Python 3.12
+3. Dependency installation
+4. Demo Mode
+5. Fresh-database reproducibility
+6. End-to-end pipeline
+7. Portfolio-safe export
+8. Full automated suite
+9. Artifact upload
 
-### Job 2 — Docker validation
+## Job 2 — Build and Test Docker Image
 
-The Docker job:
+Validates:
 
-1. Builds the Docker image
-2. Creates a fresh database inside the image
-3. Runs fresh-database tests
-4. Runs the Demo pipeline
-5. Exports portfolio outputs
-6. Runs all automated tests inside the same container
+1. Docker build
+2. Fresh setup inside the image
+3. Pipeline execution
+4. Portfolio export
+5. Complete test suite inside Docker
 
-Current CI status:
+The workflow therefore checks both the direct Python execution path and container parity.
+
+Successful runs upload Demo Mode artifacts containing generated outputs, the SQLite database, and the pipeline log.
+
+---
+
+# Project Structure
+
+Key repository layout:
 
 ```text
-Run Demo Pipeline and Tests     SUCCESS
-Build and Test Docker Image     SUCCESS
+sql-ecommerce-data-engineering/
+├── .github/
+│   └── workflows/
+│       └── ci.yml
+│
+├── airflow/
+│   └── dags/
+│       └── ecommerce_pipeline_dag.py
+│
+├── api/
+│   ├── __init__.py
+│   └── app.py
+│
+├── config/
+│   └── pipeline_config.json
+│
+├── data/
+│   ├── raw/
+│   │   ├── synthetic/
+│   │   └── pawchoice/
+│   └── processed/
+│
+├── database/
+├── diagrams/
+│   ├── pipeline_architecture.md
+│   └── database_er_diagram.md
+│
+├── docs/
+│   ├── INCIDENT_RUNBOOK.md
+│   └── images/
+│
+├── quality_checks/
+│   └── 01...07 SQL quality packs
+│
+├── queries/
+│   ├── 01_pipeline_monitoring.sql
+│   ├── 02_load_audit_analysis.sql
+│   ├── 03_data_freshness_checks.sql
+│   ├── 04_performance_validation.sql
+│   └── 05_incident_troubleshooting.sql
+│
+├── schema/
+│   └── 01...13 schema / governance SQL files
+│
+├── scripts/
+│   ├── 01_setup_database.py
+│   ├── 02_load_raw_data.py
+│   ├── 03_run_transformations.py
+│   ├── 04_run_quality_checks.py
+│   ├── 05_run_pipeline.py
+│   ├── 06_export_portfolio_outputs.py
+│   ├── 07_manage_alerts.py
+│   └── 08_performance_benchmark.py
+│
+├── tests/
+│   └── regression / contract / integration tests
+│
+├── transformations/
+│   └── transformation SQL
+│
+├── Dockerfile
+├── Dockerfile.airflow
+├── docker-compose.airflow.yml
+├── requirements.txt
+└── README.md
 ```
 
 ---
 
-## Downloadable CI Artifacts
+# Key Engineering Decisions
 
-Successful CI runs upload an artifact containing Demo Mode outputs such as:
+## Why SQLite remains in Project 01
 
-```text
-data/processed/sample_*.csv
-database/ecommerce_data_engineering.db
-logs/pipeline.log
-```
+This project is intentionally scoped as a reliable single-node SQL Data Engineering system.
 
-These artifacts contain only reproducible Demo Mode data and do not include the private Pawchoice workbook.
+The objective is to demonstrate engineering depth around correctness, reliability, operations, testing, serving, and incident handling without hiding those concepts behind a distributed stack.
 
-To download:
+Airflow's PostgreSQL database is Airflow metadata only; it is not a migration of the Project 01 business datastore.
 
-1. Open the repository on GitHub
-2. Open **Actions**
-3. Select a successful **Data Pipeline CI** run
-4. Scroll to **Artifacts**
-5. Download the generated pipeline artifact
+## Why Demo and Hybrid modes coexist
+
+A portfolio must be reproducible by reviewers, while the original real-world ingestion workflow should remain exercisable locally.
+
+Demo Mode solves public reproducibility.
+
+Hybrid Mode preserves private-source realism without publishing private data.
+
+## Why bad rows are quarantined
+
+Operational systems need evidence.
+
+Dropping invalid data silently loses the information required for reconciliation and RCA. Project 01 therefore stores rejected records with reasons and source location whenever possible.
+
+## Why alerts have a fingerprint and occurrence history
+
+One underlying failure can happen repeatedly across runs.
+
+A stable fingerprint prevents alert spam, while occurrence rows preserve each detection as evidence.
+
+## Why alert writes are non-blocking
+
+The monitoring subsystem is secondary to the primary pipeline outcome.
+
+A failed alert write should not convert a successful business step into a failed step, or overwrite the real reason a failed step failed.
+
+## Why recovery is linked explicitly
+
+A later success is not automatically a recovery.
+
+`recovery_of_run_id` creates durable evidence that a recovery run was intentionally executed for one specific failed run.
+
+## Why Airflow does not contain business logic
+
+Duplicating the pipeline inside a DAG would create two implementations to maintain and test.
+
+The DAG therefore invokes the existing orchestrator.
+
+## Why the REST API is read-only
+
+Project 01's serving layer exists to expose curated operational / business information, not to become a transactional application.
+
+Explicit read-only SQLite access also protects the data-engineering execution path from accidental API writes.
+
+## Why fresh-database testing is mandatory
+
+A repository is not reproducible if it depends on a developer's pre-existing local database.
+
+The fresh-database contract rebuilds the database from repository source and checks schema, governance, lineage, and integrity.
 
 ---
 
-## Repository Safety
+# Six-dimension Engineering Evidence
 
-The public repository should remain in Demo Mode before commit and push.
+This project is designed to demonstrate a complete engineering loop.
 
-Before committing:
+| Dimension | Evidence |
+|---|---|
+| **Build** | Ingestion, transformations, schema, quality, serving API, Airflow, Docker |
+| **Operate** | Orchestrator, run IDs, telemetry, SLA, alerts, Airflow scheduling |
+| **Break** | Failure injection, malformed data, stale data, lock failures, aggregation bug |
+| **Troubleshoot** | Audit/step/SLA evidence, RCA SQL pack, incident runbook |
+| **Optimize** | Composite indexes, query plans, benchmark, regression tests |
+| **Explain** | README, architecture diagram, ER diagram, incident evidence and design decisions |
+
+---
+
+# Scope Boundaries
+
+Project 01 intentionally does **not** claim to implement:
+
+- Spark
+- Databricks
+- Kafka
+- Flink
+- Delta Lake
+- Medallion / Bronze-Silver-Gold architecture
+- Cloud deployment
+- Distributed processing
+
+Those technologies belong in other projects where they can be demonstrated properly instead of being added superficially to this repository.
+
+Possible future engineering extensions for Project 01 itself would be limited to changes that preserve its current scope, such as stronger schema migration tooling or additional operational visualization.
+
+---
+
+# Repository Safety Checklist
+
+Before commit / push:
 
 ```bash
-git status
+git status --short
 ```
 
-Confirm that these are not tracked:
+Do not commit private or runtime-only artifacts such as:
 
 ```text
 data/raw/pawchoice/pawchoice_payments.xlsx
@@ -1388,182 +1421,14 @@ data/processed/docker/
 __pycache__/
 ```
 
-The repository should contain only:
-
-- Source code
-- SQL
-- Configuration
-- Synthetic sample input
-- Portfolio-safe outputs
-- Documentation
-- Tests
-- Docker configuration
-- CI configuration
+The public repository should contain only safe source code, SQL, configuration, synthetic inputs, tests, documentation, Docker / Airflow definitions, CI configuration, and portfolio-safe outputs.
 
 ---
 
-## Key Data Engineering Skills Demonstrated
-
-### SQL and Data Modeling
-
-- Relational schema design
-- Primary and foreign keys
-- Unique constraints
-- Analytical views
-- Composite indexes
-- Query-plan inspection
-- Query optimization
-
-### Pipeline Engineering
-
-- Multi-source ingestion
-- Staging/core architecture
-- SQL transformations
-- Incremental loading
-- UPSERT
-- Idempotency
-- Watermarks
-- Late-arriving data handling
-- Recovery and backfill concepts
-
-### Data Quality and Reliability
-
-- Null validation
-- Duplicate detection
-- Referential integrity
-- Business-rule validation
-- Reconciliation
-- Freshness
-- Threshold-based quality gates
-- Severity policies
-- Rejected-record handling
-- Failure-aware auditing
-
-### Governance and Privacy
-
-- Data asset registry
-- Data classification
-- PII-aware handling
-- Hashing
-- Masking
-- Sanitization
-- Dataset lineage
-- Runtime lineage
-- Recursive dependency tracing
-
-### Monitoring and Operations
-
-- Pipeline audit logs
-- Step execution logs
-- SLA metrics
-- Run IDs
-- Attempt numbers
-- Runtime metrics
-- Failure metadata
-
-### Engineering Practices
-
-- Unit and acceptance testing
-- Fresh-database reproducibility
-- Docker
-- Non-root container execution
-- Git
-- GitHub Actions
-- CI validation
-- Portfolio-safe artifact generation
-
----
-
-## Design Decisions
-
-### Why Demo Mode exists
-
-A public portfolio repository should be runnable by reviewers without access to confidential business files.
-
-Demo Mode provides reproducibility while Hybrid Mode preserves the ability to exercise the real-world ingestion workflow locally.
-
-### Why private source data is excluded
-
-The private workbook may contain names, account information, phone numbers, and business notes.
-
-Keeping raw data outside Git is part of the engineering design, not a missing project artifact.
-
-### Why runtime lineage is separate from static lineage
-
-Static dependencies describe how datasets relate conceptually.
-
-Runtime lineage describes what happened during a specific execution.
-
-Separating the two avoids overwriting historical execution evidence when the static lineage graph remains unchanged.
-
-### Why composite indexes replaced some single-column indexes
-
-Indexes were evaluated using representative query patterns and `EXPLAIN QUERY PLAN`.
-
-Composite indexes were retained only when they improved access patterns and reduced redundant indexing.
-
-### Why fresh-database testing matters
-
-A pipeline that works only because a developer already has a locally patched database is not reproducible.
-
-The fresh-database test proves that schema, governance metadata, views, indexes, and lineage can be rebuilt from repository source files alone.
-
----
-
-## Troubleshooting Lessons
-
-### Docker ephemeral storage
-
-An early Docker validation approach ran the pipeline and tests in separate ephemeral containers.
-
-The generated SQLite database disappeared when the first container exited.
-
-The final design runs database creation, pipeline execution, export, and tests in the same container when validating the image.
-
-### Windows SQLite file locking
-
-A fresh-database test initially encountered a Windows file-lock issue because a SQLite connection could remain open longer than expected.
-
-The setup code was updated so the connection is explicitly closed after use, allowing temporary databases to be deleted reliably.
-
-### Parameterized quality checks
-
-Quality rules are configuration-driven.
-
-Automated tests use the same configured values as runtime execution instead of hard-coding independent copies of allowed statuses and thresholds.
-
-This reduces drift between production behavior and tests.
-
----
-
-## Future Improvements
-
-Potential next-stage improvements include:
-
-- PostgreSQL migration
-- Schema migration tooling
-- Apache Airflow orchestration
-- dbt modeling and tests
-- Cloud object storage
-- Cloud deployment
-- Spark / Databricks processing
-- Bronze / Silver / Gold architecture
-- CDC
-- Kafka or another event-streaming platform
-- OpenLineage-compatible event integration
-- Column-level lineage
-- Automated operational alerts
-- Dashboard generation
-- Infrastructure as Code
-
-These are intentionally future extensions rather than claims about the current implementation.
-
----
-
-## Author
+# Author
 
 **Bodin Krongchon**
 
 Data Engineering Portfolio Project
 
-Focused on building reliable, testable, privacy-aware, reproducible, observable, and explainable data pipelines.
+Focused on building reliable, testable, privacy-aware, reproducible, observable, recoverable, and explainable data pipelines.
