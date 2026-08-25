@@ -51,27 +51,44 @@ LEFT JOIN payments AS pay
 
 
 CREATE VIEW vw_customer_order_summary AS
+WITH order_level AS (
+    SELECT
+        o.order_id,
+        o.customer_id,
+        o.order_date,
+        o.order_total,
+        COALESCE(
+            SUM(oi.line_total),
+            0
+        ) AS order_spent
+    FROM orders AS o
+    LEFT JOIN order_items AS oi
+        ON o.order_id = oi.order_id
+    GROUP BY
+        o.order_id,
+        o.customer_id,
+        o.order_date,
+        o.order_total
+)
 SELECT
     c.customer_id,
     c.customer_name,
     c.email,
     c.city,
-    COUNT(DISTINCT o.order_id) AS total_orders,
+    COUNT(ol.order_id) AS total_orders,
     COALESCE(
-        SUM(oi.line_total),
+        SUM(ol.order_spent),
         0
     ) AS total_spent,
     COALESCE(
-        AVG(o.order_total),
+        AVG(ol.order_total),
         0
     ) AS average_order_value,
-    MIN(o.order_date) AS first_order_date,
-    MAX(o.order_date) AS latest_order_date
+    MIN(ol.order_date) AS first_order_date,
+    MAX(ol.order_date) AS latest_order_date
 FROM customers AS c
-LEFT JOIN orders AS o
-    ON c.customer_id = o.customer_id
-LEFT JOIN order_items AS oi
-    ON o.order_id = oi.order_id
+LEFT JOIN order_level AS ol
+    ON c.customer_id = ol.customer_id
 GROUP BY
     c.customer_id,
     c.customer_name,
@@ -109,31 +126,48 @@ GROUP BY
 
 
 CREATE VIEW vw_daily_sales_summary AS
+WITH order_level AS (
+    SELECT
+        o.order_id,
+        o.customer_id,
+        o.order_date,
+        o.order_total,
+        COALESCE(
+            SUM(oi.quantity),
+            0
+        ) AS units_sold,
+        COALESCE(
+            SUM(oi.line_total),
+            0
+        ) AS total_revenue
+    FROM orders AS o
+    LEFT JOIN order_items AS oi
+        ON o.order_id = oi.order_id
+    GROUP BY
+        o.order_id,
+        o.customer_id,
+        o.order_date,
+        o.order_total
+)
 SELECT
-    o.order_date,
-    COUNT(
-        DISTINCT o.order_id
-    ) AS total_orders,
-    COUNT(
-        DISTINCT o.customer_id
-    ) AS unique_customers,
+    order_date,
+    COUNT(order_id) AS total_orders,
+    COUNT(DISTINCT customer_id) AS unique_customers,
     COALESCE(
-        SUM(oi.quantity),
+        SUM(units_sold),
         0
     ) AS units_sold,
     COALESCE(
-        SUM(oi.line_total),
+        SUM(total_revenue),
         0
     ) AS total_revenue,
     COALESCE(
-        AVG(o.order_total),
+        AVG(order_total),
         0
     ) AS average_order_value
-FROM orders AS o
-LEFT JOIN order_items AS oi
-    ON o.order_id = oi.order_id
+FROM order_level
 GROUP BY
-    o.order_date;
+    order_date;
 
 
 CREATE VIEW vw_payment_summary AS
